@@ -62,6 +62,25 @@ wishlist, profile), live stock, and every form (contact, workshop requests,
 newsletter, project submissions, part requests). Product and article pages
 are built from `src/content/*.js`, the same data used to seed the API.
 
+## Admin
+
+The back office is at `/admin`, part of the same app. It's only for accounts
+whose email is listed in the API's `ADMIN_EMAILS` (sign up with that email;
+the API checks the role on every request).
+
+| Screen | What it does |
+|---|---|
+| Dashboard | 30-day sales, orders to fulfil, refunds needed, low stock, inbox counts |
+| Orders | Search/filter; move orders placed → confirmed → packed → shipped (courier + tracking no.) → delivered, with customer emails; cancel (stock returns); record Razorpay refunds |
+| Products | Create/edit (photos, datasheet PDF, specs, badges, kit contents), quick stock edits, hide from shop |
+| Inbox | Contact messages and part requests, workshop requests (new → contacted → scheduled → closed), newsletter list + CSV export |
+| Projects | Review community submissions, edit, add a photo, publish/feature/reject |
+| Articles | Block editor (headings, paragraphs, lists, tables, code), cover image, drafts |
+
+Checkout prices, stock and order data change immediately. Product pages, the
+blog and the projects page are still built from `src/content/*.js`, so
+catalog/content edits appear on those pages after that switch is made.
+
 ## Before launch
 
 Search the code for `TODO_CLIENT` to find every placeholder: real product data

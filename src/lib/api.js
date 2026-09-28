@@ -14,14 +14,16 @@ export class ApiError extends Error {
 }
 
 async function request(method, path, body) {
+  const isForm = body instanceof FormData
   let res
   try {
     res = await fetch(`${BASE}/api${path}`, {
       method,
       credentials: 'include',
-      // The API only accepts JSON writes (CSRF protection)
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // The API only accepts JSON writes (CSRF protection); file uploads send
+      // multipart and the browser sets that header itself
+      headers: body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : undefined,
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, 'network', "Can't reach CircuitBay right now. Check your connection and try again.")
@@ -40,6 +42,13 @@ export const api = {
   put: (path, body = {}) => request('PUT', path, body),
   patch: (path, body = {}) => request('PATCH', path, body),
   del: (path) => request('DELETE', path),
+  // Admin file upload → { key, url, contentType, size }
+  upload: (file, folder) => {
+    const form = new FormData()
+    form.set('file', file)
+    if (folder) form.set('folder', folder)
+    return request('POST', '/admin/uploads', form)
+  },
 }
 
 // Field-level messages from a 400 response: { email: '…', 'address.pin': '…' }

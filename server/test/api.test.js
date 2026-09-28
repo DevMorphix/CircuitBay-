@@ -372,6 +372,24 @@ describe('admin', () => {
     expect(track.body.order).toMatchObject({ status: 'shipped', courier: 'Delhivery', trackingNumber: 'DL123' })
   })
 
+  it('cancels a paid order (restocking it) and tracks the refund', async () => {
+    const co = await customer.post('/api/checkout', checkoutBody([{ productId: 'hc-sr04', qty: 2 }]))
+    await customer.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: 'pay_refund', razorpay_signature: 'fake-ok' })
+    const stockBefore = (await customer.get('/api/stock?ids=hc-sr04')).body.stock['hc-sr04']
+
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refunded`, {})).status).toBe(400) // not cancelled yet
+    await admin.post(`/api/admin/orders/${co.body.orderId}/status`, { status: 'cancelled', notifyCustomer: false })
+    expect((await customer.get('/api/stock?ids=hc-sr04')).body.stock['hc-sr04']).toBe(stockBefore + 2)
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBeGreaterThanOrEqual(1)
+
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refunded`, { note: 'rfnd_123' })).status).toBe(200)
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refunded`, {})).status).toBe(409)
+    const detail = (await admin.get(`/api/admin/orders/${co.body.orderId}`)).body.order
+    expect(detail.refundNote).toBe('rfnd_123')
+    expect(detail.events.map((e) => e.status)).toContain('refunded')
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBe(0)
+  })
+
   it('uploads to storage and serves it back via /media', async () => {
     const form = new FormData()
     form.set('file', new File([new Uint8Array([137, 80, 78, 71])], 'kit.png', { type: 'image/png' }))
@@ -387,6 +405,50 @@ describe('admin', () => {
     bad.set('file', new File(['<html>'], 'x.html', { type: 'text/html' }))
     expect((await admin.post('/api/admin/uploads', bad)).status).toBe(400)
     expect((await customer.post('/api/admin/uploads', form)).status).toBe(403)
+  })
+
+  it('edits articles with list and table blocks and loads them back for the editor', async () => {
+    const body = [
+      { type: 'h2', id: 'intro', text: 'Intro' },
+      { type: 'list', items: ['one', 'two'] },
+      { type: 'table', head: ['a', 'b'], rows: [['1', '2']] },
+    ]
+    const saved = await admin.put('/api/admin/articles/test-post', { title: 'Test post', category: 'tutorials', body, status: 'draft' })
+    expect(saved.status).toBe(200)
+    const loaded = await admin.get('/api/admin/articles/test-post')
+    expect(loaded.body.article.body).toEqual(body)
+    expect(loaded.body.article.status).toBe('draft')
+    expect((await customer.get('/api/articles/test-post')).status).toBe(404) // drafts stay private
+    expect((await admin.put('/api/admin/articles/bad', { title: 'Bad', category: 'x', body: [{ type: 'list', items: [] }] })).status).toBe(400)
+  })
+
+  it('accepts exactly what the admin article editor sends, and round-trips it', async () => {
+    const { toEditable, fromEditable, slugify } = await import('../../src/pages/admin/format.js')
+    // What a person types into the editor
+    const typed = [
+      { type: 'p', text: 'The INA219 measures bus voltage and current.' },
+      { type: 'h2', text: 'Wiring it up' },
+      { type: 'list', text: 'Up to 26 V bus voltage\n\n I2C interface ' },
+      { type: 'table', text: 'Spec | Value\nBus voltage | 0–26 V\nInterface | I2C' },
+      { type: 'code', text: 'Wire.begin();' },
+    ]
+    const body = typed.filter((b) => b.text?.trim()).map(fromEditable)
+    const slug = slugify('INA219 current sensor: a quick guide')
+    expect(slug).toBe('ina219-current-sensor-a-quick-guide')
+    const res = await admin.put(`/api/admin/articles/${slug}`, { title: 'INA219 current sensor: a quick guide', category: 'tutorials', body, status: 'published' })
+    expect(res.status).toBe(200)
+    const loaded = (await admin.get(`/api/admin/articles/${slug}`)).body.article.body
+    expect(loaded[1]).toEqual({ type: 'h2', id: 'wiring-it-up', text: 'Wiring it up' })
+    expect(loaded[2]).toEqual({ type: 'list', items: ['Up to 26 V bus voltage', 'I2C interface'] })
+    expect(loaded[3]).toEqual({ type: 'table', head: ['Spec', 'Value'], rows: [['Bus voltage', '0–26 V'], ['Interface', 'I2C']] })
+    // Loading it back into the editor gives the same text a person would edit
+    expect(loaded.map(toEditable)[3].text).toBe('Spec | Value\nBus voltage | 0–26 V\nInterface | I2C')
+    expect((await customer.get(`/api/articles/${slug}`)).status).toBe(200)
+  })
+
+  it('returns raw image keys to the product editor', async () => {
+    const list = await admin.get('/api/admin/products?q=esp32-devkit')
+    expect(list.body.products[0]).toMatchObject({ id: 'esp32-devkit', imageKeys: [], datasheetKey: null })
   })
 
   it('moderates project submissions', async () => {

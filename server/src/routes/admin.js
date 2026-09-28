@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { body, query } from '../middleware/validate.js'
 import { requireAdmin } from '../middleware/auth.js'
-import { json } from '../db/index.js'
+import { json, parseJson } from '../db/index.js'
 import { randomId } from '../lib/crypto.js'
 import { badRequest, conflict, notFound } from '../lib/errors.js'
 import { rupeesToPaise } from '../lib/money.js'
@@ -29,14 +29,14 @@ admin.get('/stats', async (c) => {
   const { db } = c.var.svc
   const since = Date.now() - 30 * 86_400_000
   const [sales, byStatus, lowStock, inbox] = await Promise.all([
-    db.first(`SELECT COUNT(*) AS orders, IFNULL(SUM(total_paise), 0) AS revenue FROM orders WHERE paid_at >= ?`, [since]),
+    db.first(`SELECT COUNT(*) AS orders, IFNULL(SUM(total_paise), 0) AS revenue FROM orders WHERE paid_at >= ? AND refunded_at IS NULL AND status != 'cancelled'`, [since]),
     db.all(`SELECT status, COUNT(*) AS n FROM orders GROUP BY status`),
     db.all(`SELECT id, name, stock FROM products WHERE active = 1 AND stock < 5 ORDER BY stock LIMIT 20`),
     db.first(`SELECT
         (SELECT COUNT(*) FROM contact_messages WHERE status = 'new') AS messages,
         (SELECT COUNT(*) FROM workshop_requests WHERE status = 'new') AS workshops,
         (SELECT COUNT(*) FROM projects WHERE status = 'pending') AS projects,
-        (SELECT COUNT(*) FROM orders WHERE status = 'cancelled' AND paid_at IS NOT NULL) AS refundsNeeded`),
+        (SELECT COUNT(*) FROM orders WHERE status = 'cancelled' AND paid_at IS NOT NULL AND refunded_at IS NULL) AS refundsNeeded`),
   ])
   return c.json({
     last30Days: { orders: sales.orders, revenue: sales.revenue / 100 },
@@ -47,6 +47,10 @@ admin.get('/stats', async (c) => {
 })
 
 // ------------------------------------------------------------- products --
+// Admin view adds the raw storage keys the editor needs (public API only
+// returns URLs)
+const adminProduct = (config) => (p) => ({ ...product(config)(p), imageKeys: parseJson(p.images, []), datasheetKey: p.datasheet_key })
+
 const productIn = z.object({
   id: s.slug,
   name: z.string().trim().min(2).max(160),
@@ -79,7 +83,14 @@ admin.get('/products', query(z.object({ q: z.string().max(100).optional(), ...pa
   const where = q ? `WHERE name LIKE ? OR id LIKE ?` : ''
   const params = q ? [`%${q}%`, `%${q}%`] : []
   const rows = await db.all(`SELECT * FROM products ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`, [...params, limit, (pg - 1) * limit])
-  return c.json({ products: rows.map(product(config)) })
+  return c.json({ products: rows.map(adminProduct(config)) })
+})
+
+admin.get('/products/:id', async (c) => {
+  const { db, config } = c.var.svc
+  const row = await db.first('SELECT * FROM products WHERE id = ?', [c.req.param('id')])
+  if (!row) throw notFound('Product not found.')
+  return c.json({ product: adminProduct(config)(row) })
 })
 
 admin.post('/products', body(productIn), async (c) => {
@@ -94,7 +105,7 @@ admin.post('/products', body(productIn), async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [...productParams(p, now), p.id, now],
   )
-  return c.json({ product: product(config)(await db.first('SELECT * FROM products WHERE id = ?', [p.id])) }, 201)
+  return c.json({ product: adminProduct(config)(await db.first('SELECT * FROM products WHERE id = ?', [p.id])) }, 201)
 })
 
 admin.put('/products/:id', body(productIn.omit({ id: true })), async (c) => {
@@ -108,7 +119,7 @@ admin.put('/products/:id', body(productIn.omit({ id: true })), async (c) => {
     [...productParams(p, Date.now()), id],
   )
   if (!res.changes) throw notFound('Product not found.')
-  return c.json({ product: product(config)(await db.first('SELECT * FROM products WHERE id = ?', [id])) })
+  return c.json({ product: adminProduct(config)(await db.first('SELECT * FROM products WHERE id = ?', [id])) })
 })
 
 // Quick stock adjustment (e.g. after a delivery arrives)
@@ -155,7 +166,7 @@ admin.get('/orders', query(z.object({ status: z.string().optional(), q: z.string
   }
   const w = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const rows = await db.all(`SELECT * FROM orders ${w} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, (pg - 1) * limit])
-  return c.json({ orders: rows.map((o) => serializeOrder(o)) })
+  return c.json({ orders: rows.map((o) => ({ ...serializeOrder(o), refundedAt: o.refunded_at })) })
 })
 
 admin.get('/orders/:id', async (c) => {
@@ -166,7 +177,7 @@ admin.get('/orders/:id', async (c) => {
     db.all('SELECT * FROM order_items WHERE order_id = ?', [o.id]),
     db.all('SELECT * FROM order_events WHERE order_id = ? ORDER BY created_at, id', [o.id]),
   ])
-  return c.json({ order: { ...serializeOrder(o, items, events), paymentProvider: o.payment_provider, paymentOrderId: o.payment_order_id, paymentId: o.payment_id, notes: o.notes } })
+  return c.json({ order: { ...serializeOrder(o, items, events), paymentProvider: o.payment_provider, paymentOrderId: o.payment_order_id, paymentId: o.payment_id, notes: o.notes, refundedAt: o.refunded_at, refundNote: o.refund_note } })
 })
 
 // Advance fulfilment: confirmed → packed → shipped → … Emails the customer.
@@ -212,6 +223,22 @@ admin.post(
   },
 )
 
+// Record a refund made in the Razorpay dashboard (clears 'refunds needed')
+admin.post('/orders/:id/refunded', body(z.object({ note: z.string().trim().max(300).optional() })), async (c) => {
+  const { db } = c.var.svc
+  const o = await db.first('SELECT status, paid_at, refunded_at FROM orders WHERE id = ?', [c.req.param('id')])
+  if (!o) throw notFound('Order not found.')
+  if (o.status !== 'cancelled' || !o.paid_at) throw badRequest('Only cancelled, paid orders can be marked refunded. Cancel the order first.')
+  if (o.refunded_at) throw conflict('This order is already marked refunded.')
+  const now = Date.now()
+  const note = c.req.valid('json').note
+  await db.batch([
+    { sql: 'UPDATE orders SET refunded_at = ?, refund_note = ?, updated_at = ? WHERE id = ?', params: [now, note, now, c.req.param('id')] },
+    { sql: "INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'refunded', ?, ?)", params: [c.req.param('id'), note ?? 'Refund issued', now] },
+  ])
+  return c.json({ ok: true })
+})
+
 // ---------------------------------------------------------- inbound/CRM --
 const inboxList = (table) => async (c) => {
   const { status, page: pg, limit } = c.req.valid('query')
@@ -241,7 +268,7 @@ admin.get('/projects', inboxQuery, async (c) => {
   const { db, config } = c.var.svc
   const { status } = c.req.valid('query')
   const rows = await db.all(`SELECT * FROM projects ${status ? 'WHERE status = ?' : ''} ORDER BY created_at DESC LIMIT 200`, status ? [status] : [])
-  return c.json({ projects: rows.map((p) => ({ ...project(config)(p), builderEmail: p.builder_email })) })
+  return c.json({ projects: rows.map((p) => ({ ...project(config)(p), builderEmail: p.builder_email, imageKey: p.image_key })) })
 })
 
 admin.patch(
@@ -277,7 +304,16 @@ const articleIn = z.object({
   title: z.string().trim().min(2).max(200),
   category: z.string().trim().min(1).max(60),
   excerpt: z.string().trim().max(400).optional(),
-  body: z.array(z.object({ type: z.enum(['h2', 'p', 'code', 'diagram', 'image']), text: z.string().max(20000), id: z.string().max(80).optional() })).max(300),
+  // Same block types the site renders (src/pages/Article.jsx)
+  body: z
+    .array(
+      z.discriminatedUnion('type', [
+        z.object({ type: z.enum(['h2', 'p', 'code', 'diagram', 'image']), text: z.string().max(20000), id: z.string().max(80).optional() }),
+        z.object({ type: z.literal('list'), items: z.array(z.string().max(2000)).min(1).max(50) }),
+        z.object({ type: z.literal('table'), head: z.array(z.string().max(200)).min(1).max(8), rows: z.array(z.array(z.string().max(500)).max(8)).min(1).max(60) }),
+      ]),
+    )
+    .max(300),
   readTime: z.number().int().min(1).max(120).optional(),
   author: z.string().trim().max(80).optional(),
   coverKey: z.string().max(300).nullable().optional(),
@@ -292,6 +328,14 @@ admin.get('/articles', async (c) => {
   const { db, config } = c.var.svc
   const rows = await db.all('SELECT * FROM articles ORDER BY updated_at DESC LIMIT 200')
   return c.json({ articles: rows.map(article(config)) })
+})
+
+// Full article (with body blocks and the raw cover key) for the editor
+admin.get('/articles/:slug', async (c) => {
+  const { db, config } = c.var.svc
+  const row = await db.first('SELECT * FROM articles WHERE slug = ?', [c.req.param('slug')])
+  if (!row) throw notFound('Article not found.')
+  return c.json({ article: { ...article(config, { withBody: true })(row), coverKey: row.cover_key, publishedAt: row.published_at } })
 })
 
 admin.put('/articles/:slug', body(articleIn), async (c) => {
