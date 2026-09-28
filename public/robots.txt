@@ -4,6 +4,7 @@ Allow: /
 Disallow: /account
 Disallow: /shop/checkout
 Disallow: /shop/order/
+Disallow: /reset-password
 # Internal search results
 Disallow: /*?q=
 

@@ -25,4 +25,4 @@ export const cached = (ttlSec) => async (c, next) => {
 
 // Public read-only paths: served from cache, and they skip the session
 // lookup (one less D1 read per request).
-export const PUBLIC_READ = /^\/api\/(health|categories|products|articles|projects)(\/|$)/
+export const PUBLIC_READ = /^\/api\/(health|categories|products|articles|projects|stock)(\/|$)/

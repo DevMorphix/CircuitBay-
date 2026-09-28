@@ -474,6 +474,17 @@ describe('response cache', () => {
     expect(third.body.product.price).toBe(499)
   })
 
+  it('serves live, uncached stock even while product data is cached', async () => {
+    const { app, db } = setup()
+    const api = client(app)
+    await api.get('/api/products/line-follower-kit') // warm the cache
+    await db.run(`UPDATE products SET stock = 1 WHERE id = 'line-follower-kit'`)
+    expect((await api.get('/api/products/line-follower-kit')).body.product.stock).toBe(4) // cached
+    const live = await api.get('/api/stock?ids=line-follower-kit,esp32-devkit,nope')
+    expect(live.headers.get('cache-control')).toBe('no-store')
+    expect(live.body.stock).toEqual({ 'line-follower-kit': 1, 'esp32-devkit': 120 })
+  })
+
   it('keeps CORS headers on cached responses', async () => {
     const { app } = setup()
     await app.request('/api/categories', { headers: { origin: 'http://localhost:5173' } })

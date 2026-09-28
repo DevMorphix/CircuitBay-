@@ -4,10 +4,11 @@ import { PageHero, Section } from '../components/ui/Section.jsx'
 import { Reveal } from '../components/ui/Reveal.jsx'
 import { Button } from '../components/ui/Button.jsx'
 import { Photo } from '../components/ui/Card.jsx'
-import { Icon } from '../components/ui/Icon.jsx'
 import { ProjectCard } from '../components/content/ProjectCard.jsx'
 import { brand, projects } from '../content/siteContent.js'
-import { trackEvent } from '../lib/analytics.js'
+import { api } from '../lib/api.js'
+import { useSubmit } from '../lib/useSubmit.js'
+import { FieldError, FormError, FormSent, Honeypot } from '../components/ui/FormBits.jsx'
 import { schema } from '../lib/seo.js'
 
 // D3 — curated grid from the community site, editor's-pick spotlight,
@@ -93,9 +94,10 @@ export function Projects() {
   )
 }
 
-// TODO_CLIENT: wire to the community site's submission flow
+// Submissions land in the admin queue (status "pending") for moderation
 function SubmitForm() {
-  const [sent, setSent] = useState(false)
+  const form = useSubmit('project_submission', (d) => api.post('/forms/project-submissions', d))
+  const fe = form.fields
   return (
     <div className="grid gap-10 lg:grid-cols-2">
       <div>
@@ -103,29 +105,29 @@ function SubmitForm() {
         <h2 className="font-heading text-3xl font-semibold text-white sm:text-4xl">Built something? Share it with the bay.</h2>
         <p className="mt-4 text-white/70">Working, half-working or gloriously broken — every build teaches someone something.</p>
       </div>
-      {sent ? (
-        <p role="status" className="flex items-center gap-3 text-white">
-          <Icon name="check" className="text-brand-300" /> Thanks! We'll review it and get in touch.
-        </p>
+      {form.sent ? (
+        <FormSent dark>Thanks! We'll review it and get in touch.</FormSent>
       ) : (
-        <form
-          className="grid gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            trackEvent('form_submit', { form: 'project_submission' })
-            setSent(true)
-          }}
-        >
+        <form className="relative grid gap-4" onSubmit={form.onSubmit}>
+          <Honeypot />
           <label className="sr-only" htmlFor="p-title">Project name</label>
-          <input id="p-title" required placeholder="Project name" className="field" />
+          <input id="p-title" name="title" required minLength={2} placeholder="Project name" className="field" />
+          <FieldError message={fe.title} dark />
+          <label className="sr-only" htmlFor="p-builder">Your name</label>
+          <input id="p-builder" name="builder" placeholder="Your name (shown with the project)" className="field" />
           <label className="sr-only" htmlFor="p-email">Your email</label>
-          <input id="p-email" type="email" required placeholder="Your email" className="field" />
+          <input id="p-email" name="email" type="email" required placeholder="Your email (not shown)" className="field" />
+          <FieldError message={fe.email} dark />
           <label className="sr-only" htmlFor="p-link">Link</label>
-          <input id="p-link" type="url" placeholder="Link to photos / video / repo" className="field" />
+          <input id="p-link" name="link" type="url" placeholder="Link to photos / video / repo" className="field" />
+          <FieldError message={fe.link} dark />
           <label className="sr-only" htmlFor="p-desc">Description</label>
-          <textarea id="p-desc" rows={3} placeholder="What does it do? What parts did you use?" className="field" />
+          <textarea id="p-desc" name="description" rows={3} placeholder="What does it do? What parts did you use?" className="field" />
+          <FormError message={form.error} dark />
           <div>
-            <Button type="submit">Submit your project →</Button>
+            <Button type="submit" disabled={form.sending}>
+              {form.sending ? 'Submitting…' : 'Submit your project →'}
+            </Button>
           </div>
         </form>
       )}

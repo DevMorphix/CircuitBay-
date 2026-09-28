@@ -3,10 +3,11 @@ import { formatPrice } from '../../content/shopData.js'
 import { summarise } from '../../context/CartContext.jsx'
 
 // Order summary used on cart + checkout (Part C5/C6).
-export function OrderSummary({ items, subtotal, showItems = false, showCoupon = true, children }) {
+// `serverTotals` (from POST /api/checkout) replaces the estimate once known.
+export function OrderSummary({ items, subtotal, shippingMethod = 'standard', serverTotals, showItems = false, showCoupon = true, children }) {
   const [code, setCode] = useState('')
   const [couponMsg, setCouponMsg] = useState('')
-  const { shipping, tax, total } = summarise(subtotal)
+  const { shipping, tax, total } = serverTotals ?? summarise(subtotal, shippingMethod)
 
   return (
     <aside className="card p-6" aria-label="Order summary">

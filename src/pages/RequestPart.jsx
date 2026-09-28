@@ -1,18 +1,23 @@
-import { useState } from 'react'
 import { PageShell } from '../components/layout/PageShell.jsx'
 import { PageHero, Section } from '../components/ui/Section.jsx'
 import { Button } from '../components/ui/Button.jsx'
-import { Icon } from '../components/ui/Icon.jsx'
 import { FaqList } from '../components/content/FaqList.jsx'
+import { FieldError, FormError, FormSent, Honeypot } from '../components/ui/FormBits.jsx'
 import { requestPart } from '../content/landingData.js'
 import { schema } from '../lib/seo.js'
-import { trackEvent } from '../lib/analytics.js'
+import { api } from '../lib/api.js'
+import { useSubmit } from '../lib/useSubmit.js'
 
-// Component-sourcing landing page. TODO_CLIENT: wire the form to
-// POST /api/forms/contact (role + message) once the frontend uses the API.
+// Component-sourcing landing page. Requests arrive in the admin inbox as
+// contact messages (POST /api/forms/contact) with the part details.
 export function RequestPart() {
   const path = '/request-a-part'
-  const [sent, setSent] = useState(false)
+  const form = useSubmit('request_part', ({ part, qty, neededBy, link, ...contact }) =>
+    api.post('/forms/contact', {
+      ...contact,
+      message: [`Part request: ${part}`, `Quantity: ${qty}`, neededBy && `Needed by: ${neededBy}`, link && `Link: ${link}`].filter(Boolean).join('\n'),
+    }),
+  )
 
   return (
     <PageShell
@@ -47,27 +52,23 @@ export function RequestPart() {
           </div>
 
           <div className="card p-6 sm:p-8">
-            {sent ? (
-              <p role="status" className="flex items-center gap-3 text-ink-900">
-                <Icon name="check" className="text-brand-500" /> Got it — we'll reply with availability and a quote.
-              </p>
+            {form.sent ? (
+              <FormSent>Got it — we'll reply with availability and a quote.</FormSent>
             ) : (
-              <form
-                className="grid gap-4 sm:grid-cols-2"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  trackEvent('form_submit', { form: 'request_part' })
-                  setSent(true)
-                }}
-              >
-                <Field id="rp-part" label="Part name or number" required className="sm:col-span-2" placeholder="e.g. INA219 current sensor" />
-                <Field id="rp-qty" label="Quantity" type="number" min="1" required defaultValue="1" />
-                <Field id="rp-when" label="Needed by (optional)" type="date" />
-                <Field id="rp-link" label="Datasheet or product link (optional)" type="url" className="sm:col-span-2" />
-                <Field id="rp-email" label="Email" type="email" required />
-                <Field id="rp-phone" label="Phone (optional)" type="tel" />
-                <div className="sm:col-span-2">
-                  <Button type="submit">Request this part →</Button>
+              <form className="relative grid gap-4 sm:grid-cols-2" onSubmit={form.onSubmit}>
+                <Honeypot />
+                <Field id="rp-part" name="part" label="Part name or number" required className="sm:col-span-2" placeholder="e.g. INA219 current sensor" />
+                <Field id="rp-qty" name="qty" label="Quantity" type="number" min="1" required defaultValue="1" />
+                <Field id="rp-when" name="neededBy" label="Needed by (optional)" type="date" />
+                <Field id="rp-link" name="link" label="Datasheet or product link (optional)" type="url" className="sm:col-span-2" />
+                <Field id="rp-name" name="name" label="Your name" required error={form.fields.name} />
+                <Field id="rp-email" name="email" label="Email" type="email" required error={form.fields.email} />
+                <Field id="rp-phone" name="phone" label="Phone (optional)" type="tel" className="sm:col-span-2" />
+                <div className="space-y-3 sm:col-span-2">
+                  <FormError message={form.error} />
+                  <Button type="submit" disabled={form.sending}>
+                    {form.sending ? 'Sending…' : 'Request this part →'}
+                  </Button>
                 </div>
               </form>
             )}
@@ -82,13 +83,14 @@ export function RequestPart() {
   )
 }
 
-function Field({ id, label, className = '', ...rest }) {
+function Field({ id, label, className = '', error, ...rest }) {
   return (
     <div className={className}>
       <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-ink-900">
         {label}
       </label>
-      <input id={id} className="field" {...rest} />
+      <input id={id} className="field" aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-err` : undefined} {...rest} />
+      <FieldError id={`${id}-err`} message={error} />
     </div>
   )
 }

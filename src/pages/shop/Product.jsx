@@ -10,7 +10,10 @@ import { QtyStepper } from '../../components/shop/QtyStepper.jsx'
 import { formatPrice, getProduct, products, shopCategories } from '../../content/shopData.js'
 import { projects } from '../../content/siteContent.js'
 import { useCart } from '../../context/CartContext.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { trackEvent } from '../../lib/analytics.js'
+import { api } from '../../lib/api.js'
+import { useApi } from '../../lib/useApi.js'
 import { NotFound } from '../NotFound.jsx'
 import { schema } from '../../lib/seo.js'
 
@@ -34,6 +37,27 @@ function ProductView({ product }) {
   const { add } = useCart()
   const navigate = useNavigate()
   const category = shopCategories.find((c) => c.slug === product.category)
+
+  // Live stock from the API's uncached /stock endpoint once hydrated (the
+  // prerendered page shows the catalog value; checkout re-checks on the
+  // server either way)
+  const live = useApi(`/stock?ids=${product.id}`)
+  const stock = live.data?.stock[product.id] ?? product.stock
+
+  // Wishlist heart (signed-in only; signed-out visitors are sent to sign in)
+  const { user } = useAuth()
+  const wishlist = useApi(user ? '/me/wishlist' : null)
+  const [savedOverride, setSavedOverride] = useState(null)
+  const saved = savedOverride ?? wishlist.data?.products.some((p) => p.id === product.id) ?? false
+  const toggleWishlist = async () => {
+    if (!user) return navigate(`/login?next=${encodeURIComponent(`/shop/product/${product.id}`)}`)
+    setSavedOverride(!saved)
+    try {
+      await (saved ? api.del(`/me/wishlist/${product.id}`) : api.put(`/me/wishlist/${product.id}`))
+    } catch {
+      setSavedOverride(saved)
+    }
+  }
 
   const related = products.filter((p) => p.id !== product.id && p.category === product.category).slice(0, 4)
   const together = products.filter((p) => ['breadboard-830', 'jumper-wires', 'multimeter'].includes(p.id) && p.id !== product.id).slice(0, 2)
@@ -101,8 +125,8 @@ function ProductView({ product }) {
               </div>
               <p className="mt-6 font-heading text-3xl font-semibold text-ink-900">{formatPrice(product.price)}</p>
               <p className="mt-1 text-xs text-ink-400">Inclusive of all taxes</p>
-              <p className={`mt-3 text-sm font-semibold ${product.stock < 10 ? 'text-navy-800' : 'text-brand-600'}`}>
-                {product.stock === 0 ? 'Out of stock' : product.stock < 10 ? `Only ${product.stock} left` : 'In stock — ships in 24 hours'}
+              <p className={`mt-3 text-sm font-semibold ${stock < 10 ? 'text-navy-800' : 'text-brand-700'}`}>
+                {stock === 0 ? 'Out of stock' : stock < 10 ? `Only ${stock} left` : 'In stock — ships in 24 hours'}
               </p>
               <p className="mt-6 text-lg leading-relaxed text-ink-600">{product.forWhat}</p>
               {product.build && (
@@ -113,23 +137,36 @@ function ProductView({ product }) {
               )}
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <QtyStepper value={qty} onChange={setQty} max={product.stock} />
+                <QtyStepper value={Math.min(qty, Math.max(stock, 1))} onChange={setQty} max={Math.max(stock, 1)} />
                 <button
                   type="button"
                   onClick={addToCart}
-                  className="flex-1 rounded-xl border border-brand-500 px-6 py-3 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-500/5"
+                  disabled={stock === 0}
+                  className="flex-1 rounded-xl border border-brand-600 px-6 py-3 text-sm font-semibold text-brand-700 transition-colors hover:bg-brand-500/5 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Add to cart
                 </button>
                 <button
                   type="button"
+                  disabled={stock === 0}
                   onClick={() => {
                     add(product.id, qty)
                     navigate('/shop/checkout')
                   }}
-                  className="flex-1 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition-all hover:bg-brand-700 hover:shadow-[0_0_24px_rgba(63,125,222,0.45)]"
+                  className="flex-1 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition-all hover:bg-brand-700 hover:shadow-[0_0_24px_rgba(63,125,222,0.45)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Buy now
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleWishlist}
+                  aria-pressed={saved}
+                  aria-label={saved ? 'Remove from wishlist' : 'Save to wishlist'}
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl border transition-colors ${
+                    saved ? 'border-brand-600 bg-brand-500/10 text-brand-700' : 'border-black/10 text-ink-600 hover:border-brand-600 hover:text-brand-700'
+                  }`}
+                >
+                  <Icon name="heart" size={20} className={saved ? 'fill-current' : ''} />
                 </button>
               </div>
               {added && (

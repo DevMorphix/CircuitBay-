@@ -31,3 +31,6 @@ dist-ssr
 # Internal docs stay local — only README files are published
 *.md
 !README.md
+
+# Local environment settings (secrets never committed)
+.env
