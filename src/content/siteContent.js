@@ -132,8 +132,10 @@ export const educators = {
     { icon: 'curriculum', title: 'STREAM Curriculum', body: 'Project-based lessons that fit your timetable.' },
     { icon: 'teacher', title: 'Teacher Training', body: 'Confident teachers make confident builders.' },
   ],
-  // TODO_CLIENT: real workshop count + school/college logos
-  trust: { stat: '50+ workshops', logos: ['School', 'College', 'School', 'Institute', 'College'] },
+  // TODO_CLIENT: real workshop count (e.g. '50+ workshops') + school/college
+  // logo image paths. The trust strips stay hidden while these are empty —
+  // we don't show invented numbers or placeholder logos.
+  trust: { stat: null, logos: [] },
   cta: { label: 'Request a workshop', to: '/contact#workshop' },
   ctaMore: { label: 'Lab setup & ATL packages', to: '/schools' },
 }
@@ -145,7 +147,7 @@ export const projects = [
     title: 'AirLoo',
     blurb: 'A smart washroom air-quality monitor that alerts staff before things get bad.',
     tags: ['ESP32', 'MQ-135', 'IoT'],
-    builder: 'Builder name',
+    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
     category: 'IoT',
   },
   {
@@ -153,7 +155,7 @@ export const projects = [
     title: 'Vazhikatti',
     blurb: 'An obstacle-sensing navigation aid that guides visually impaired users with haptic feedback.',
     tags: ['Arduino', 'Ultrasonic', 'Haptics'],
-    builder: 'Builder name',
+    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
     category: 'Robotics',
   },
   {
@@ -161,7 +163,7 @@ export const projects = [
     title: 'Smart Agriculture',
     blurb: 'Soil-moisture sensing and automatic irrigation, reporting live to a phone dashboard.',
     tags: ['ESP8266', 'Soil sensor', 'Relay'],
-    builder: 'Builder name',
+    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
     category: 'IoT',
   },
   {
@@ -169,7 +171,7 @@ export const projects = [
     title: 'Hallway Delivery Bot',
     blurb: 'A line-following rover that carries notes between classrooms.',
     tags: ['Arduino', 'IR array', 'L298N'],
-    builder: 'Builder name',
+    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
     category: 'Robotics',
   },
   {
@@ -177,7 +179,7 @@ export const projects = [
     title: 'Wake-word Desk Assistant',
     blurb: 'On-device wake-word detection on a microcontroller — no cloud round-trip.',
     tags: ['ESP32-S3', 'I2S mic', 'TinyML'],
-    builder: 'Builder name',
+    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
     category: 'AI',
   },
   {
@@ -185,7 +187,7 @@ export const projects = [
     title: 'Rooftop Weather Station',
     blurb: 'Temperature, humidity and rainfall logged every minute from a school rooftop.',
     tags: ['BME280', 'Rain gauge', 'ESP32'],
-    builder: 'Builder name',
+    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
     category: 'IoT',
   },
 ]
@@ -235,12 +237,10 @@ export const about = {
     { year: 'Year 3', title: 'Maker labs in schools', body: 'Planning, equipping and launching school labs.' },
     { year: 'Today', title: 'CircuitBay', body: 'A store, a learning hub and a community — in one bay.' },
   ],
-  // TODO_CLIENT: real, approved figures — illustrative only
-  stats: [
-    { key: 'builders', label: 'Builders reached', value: 12000, suffix: '+' },
-    { key: 'projects', label: 'Projects built', value: 3400, suffix: '+' },
-    { key: 'workshops', label: 'Workshops conducted', value: 50, suffix: '+' },
-  ],
+  // TODO_CLIENT: real, approved figures, e.g.
+  //   { key: 'builders', label: 'Builders reached', value: 12000, suffix: '+' }
+  // The stats strip is hidden while this is empty.
+  stats: [],
 }
 
 // ---------------------------------------------------------------------------

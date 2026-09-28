@@ -47,21 +47,24 @@ export function About() {
         </div>
       </Section>
 
-      <section ref={statsRef} className="section-dark px-4 py-16 sm:px-6">
-        <div className="mx-auto grid max-w-6xl gap-10 text-center sm:grid-cols-3">
-          {about.stats.map((s) => (
-            <div key={s.key}>
-              <CountUp
-                target={s.value}
-                start={statsInView}
-                suffix={s.suffix}
-                className="font-heading block text-4xl font-semibold text-brand-300 sm:text-5xl"
-              />
-              <p className="mt-2 text-sm font-medium text-white/65">{s.label}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Only real, approved figures — hidden until the client supplies them */}
+      {about.stats.length > 0 && (
+        <section ref={statsRef} className="section-dark px-4 py-16 sm:px-6">
+          <div className="mx-auto grid max-w-6xl gap-10 text-center sm:grid-cols-3">
+            {about.stats.map((s) => (
+              <div key={s.key}>
+                <CountUp
+                  target={s.value}
+                  start={statsInView}
+                  suffix={s.suffix}
+                  className="font-heading block text-4xl font-semibold text-brand-300 sm:text-5xl"
+                />
+                <p className="mt-2 text-sm font-medium text-white/65">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <Section tone="soft" eyebrow="THE JOURNEY" title="From one classroom to a bay.">
         <ol className="relative grid gap-6 md:grid-cols-4">

@@ -76,16 +76,18 @@ export function Schools() {
         </ol>
       </Section>
 
-      {/* TODO_CLIENT: real workshop count + school/college logos */}
-      <Section tone="light" eyebrow="TRUSTED BY SCHOOLS" title={`${educators.trust.stat} delivered in real classrooms`}>
-        <ul className="flex flex-wrap gap-3">
-          {educators.trust.logos.map((l, i) => (
-            <li key={`${l}-${i}`} className="flex h-14 w-32 items-center justify-center rounded-lg border border-black/10 text-xs font-semibold uppercase tracking-wider text-ink-400">
-              {l} logo
-            </li>
-          ))}
-        </ul>
-      </Section>
+      {/* Only shown once real figures/logos exist (TODO_CLIENT) */}
+      {(educators.trust.stat || educators.trust.logos.length > 0) && (
+        <Section tone="light" eyebrow="TRUSTED BY SCHOOLS" title={educators.trust.stat ? `${educators.trust.stat} delivered in real classrooms` : 'Schools and colleges we work with'}>
+          <ul className="flex flex-wrap items-center gap-6">
+            {educators.trust.logos.map((logo) => (
+              <li key={logo.src}>
+                <img src={logo.src} alt={logo.name} loading="lazy" className="h-14 w-auto" />
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Section tone="grey" eyebrow="QUESTIONS" title="Lab setup & workshop FAQ" width="max-w-3xl">
         <FaqList items={schools.faq} />

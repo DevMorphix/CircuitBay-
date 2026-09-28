@@ -47,9 +47,11 @@ export function Projects() {
                 </li>
               ))}
             </ul>
-            <p className="mt-6 text-sm text-ink-400">
-              Built by <span className="font-semibold text-ink-600">{pick.builder}</span>
-            </p>
+            {pick.builder && (
+              <p className="mt-6 text-sm text-ink-400">
+                Built by <span className="font-semibold text-ink-600">{pick.builder}</span>
+              </p>
+            )}
           </div>
         </Reveal>
       </Section>

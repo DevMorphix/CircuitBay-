@@ -18,10 +18,11 @@ export function ProjectCard({ project, large = false }) {
             </li>
           ))}
         </ul>
-        {/* TODO_CLIENT: real builder name */}
-        <p className="mt-4 border-t border-black/5 pt-4 text-xs text-ink-400">
-          Built by <span className="font-semibold text-ink-600">{project.builder}</span>
-        </p>
+        {project.builder && (
+          <p className="mt-4 border-t border-black/5 pt-4 text-xs text-ink-400">
+            Built by <span className="font-semibold text-ink-600">{project.builder}</span>
+          </p>
+        )}
       </div>
     </Card>
   )

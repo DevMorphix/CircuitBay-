@@ -16,11 +16,11 @@ const PRICE_BANDS = [
   { id: '200-1000', label: '₹200 – ₹1,000', test: (p) => p >= 200 && p <= 1000 },
   { id: 'o1000', label: 'Over ₹1,000', test: (p) => p > 1000 },
 ]
+// No popularity/rating sorts until those numbers are real
 const SORTS = {
-  popular: { label: 'Most popular', fn: (a, b) => b.reviews - a.reviews },
+  featured: { label: 'Featured', fn: (a, b) => Number(Boolean(b.kit)) - Number(Boolean(a.kit)) || a.name.localeCompare(b.name) },
   'price-asc': { label: 'Price: low to high', fn: (a, b) => a.price - b.price },
   'price-desc': { label: 'Price: high to low', fn: (a, b) => b.price - a.price },
-  rating: { label: 'Top rated', fn: (a, b) => b.rating - a.rating },
 }
 
 // C3 — breadcrumb → header → filters (sidebar / mobile drawer) → sort →
@@ -59,7 +59,7 @@ function CategoryView({ slug, params }) {
   const types = [...new Set(base.map((p) => p.type))]
 
   const [filters, setFilters] = useState({ price: [], level: [], brand: [], type: [], inStock: false })
-  const [sort, setSort] = useState('popular')
+  const [sort, setSort] = useState('featured')
   const [page, setPage] = useState(1)
   const [drawer, setDrawer] = useState(false)
 

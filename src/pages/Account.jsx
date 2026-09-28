@@ -3,9 +3,7 @@ import { PageShell } from '../components/layout/PageShell.jsx'
 import { PageHero, Section } from '../components/ui/Section.jsx'
 import { Button } from '../components/ui/Button.jsx'
 import { Icon } from '../components/ui/Icon.jsx'
-import { ProductCard } from '../components/shop/ProductCard.jsx'
 import { brand } from '../content/siteContent.js'
-import { getProduct } from '../content/shopData.js'
 
 const TABS = [
   { id: 'orders', label: 'Orders', icon: 'box' },
@@ -46,23 +44,10 @@ export function Account() {
             {tab === 'orders' && (
               <>
                 <h2 className="font-heading text-xl font-semibold text-ink-900">Your orders</h2>
-                <ul className="mt-6 divide-y divide-black/5">
-                  {[
-                    { id: 'CB10482211', date: '12 Sep 2026', status: 'Delivered', total: '₹1,499' },
-                    { id: 'CB10479032', date: '28 Aug 2026', status: 'Shipped', total: '₹548' },
-                  ].map((o) => (
-                    <li key={o.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
-                      <div>
-                        <p className="font-semibold text-ink-900">#{o.id}</p>
-                        <p className="text-sm text-ink-400">{o.date} · {o.total}</p>
-                      </div>
-                      <span className="chip">{o.status}</span>
-                      <Button to={`/shop/track?order=${o.id}`} variant="secondary" className="px-4! py-2!">
-                        Track
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
+                <p className="mt-6 text-ink-600">No orders yet.</p>
+                <Button to="/shop" className="mt-6">
+                  Browse the bay
+                </Button>
               </>
             )}
             {tab === 'addresses' && (
@@ -77,11 +62,7 @@ export function Account() {
             {tab === 'wishlist' && (
               <>
                 <h2 className="font-heading text-xl font-semibold text-ink-900">Wishlist</h2>
-                <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-3">
-                  {['esp32-cam', 'vl53l0x', 'soldering-kit'].map((id) => (
-                    <ProductCard key={id} product={getProduct(id)} />
-                  ))}
-                </div>
+                <p className="mt-6 text-ink-600">Nothing saved yet. Tap the heart on any product to keep it here.</p>
               </>
             )}
             {tab === 'profile' && (

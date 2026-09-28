@@ -227,7 +227,11 @@ function TabBody({ tab, product }) {
       return (
         <div>
           <Rating value={product.rating} count={product.reviews} />
-          <p className="mt-3">Reviews from verified buyers will appear here.</p>
+          {/* TODO: reviews system (verified buyers only) */}
+          <p className={product.reviews ? 'mt-3' : ''}>
+            No reviews yet. Bought this?{' '}
+            <Link to="/projects#submit" className="font-semibold text-brand-700">Share what you built with it →</Link>
+          </p>
         </div>
       )
     case 'Q&A':

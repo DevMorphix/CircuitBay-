@@ -39,22 +39,23 @@ export function ForEducators() {
         </div>
       </div>
 
-      {/* TODO_CLIENT: real workshop count + school/college logos */}
-      <Reveal className="mt-16 flex flex-col items-center gap-6 border-y border-white/10 py-8 md:flex-row md:justify-between">
-        <p className="font-heading text-2xl font-semibold text-white">
-          <span className="text-brand-300">{educators.trust.stat}</span> delivered
-        </p>
-        <ul className="flex flex-wrap justify-center gap-3">
-          {educators.trust.logos.map((l, i) => (
-            <li
-              key={`${l}-${i}`}
-              className="flex h-12 w-28 items-center justify-center rounded-lg border border-white/10 text-xs font-semibold uppercase tracking-wider text-white/40"
-            >
-              {l} logo
-            </li>
-          ))}
-        </ul>
-      </Reveal>
+      {/* Trust strip: only shown once real figures/logos exist (TODO_CLIENT) */}
+      {(educators.trust.stat || educators.trust.logos.length > 0) && (
+        <Reveal className="mt-16 flex flex-col items-center gap-6 border-y border-white/10 py-8 md:flex-row md:justify-between">
+          {educators.trust.stat && (
+            <p className="font-heading text-2xl font-semibold text-white">
+              <span className="text-brand-300">{educators.trust.stat}</span> delivered
+            </p>
+          )}
+          <ul className="flex flex-wrap justify-center gap-4">
+            {educators.trust.logos.map((logo) => (
+              <li key={logo.src}>
+                <img src={logo.src} alt={logo.name} loading="lazy" className="h-12 w-auto opacity-80" />
+              </li>
+            ))}
+          </ul>
+        </Reveal>
+      )}
 
       <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
         {['Workshop in progress', 'Students wiring a build', 'Maker lab', 'Teacher training'].map((label) => (
