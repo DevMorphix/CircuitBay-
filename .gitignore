@@ -27,3 +27,7 @@ dist-ssr
 
 # Cloudflare local dev state
 .wrangler
+
+# Internal docs stay local — only README files are published
+*.md
+!README.md
