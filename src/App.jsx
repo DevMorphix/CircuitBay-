@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { CartProvider } from './context/CartContext.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
 import { CookieConsent } from './components/layout/CookieConsent.jsx'
 import { ScrollToTop } from './components/layout/ScrollToTop.jsx'
 import { Home } from './pages/Home.jsx'
@@ -31,6 +32,10 @@ const NotFound = page(() => import('./pages/NotFound.jsx'), 'NotFound')
 const Schools = page(() => import('./pages/Schools.jsx'), 'Schools')
 const FinalYearProjects = page(() => import('./pages/FinalYearProjects.jsx'), 'FinalYearProjects')
 const RequestPart = page(() => import('./pages/RequestPart.jsx'), 'RequestPart')
+const Login = page(() => import('./pages/Auth.jsx'), 'Login')
+const Register = page(() => import('./pages/Auth.jsx'), 'Register')
+const ForgotPassword = page(() => import('./pages/Auth.jsx'), 'ForgotPassword')
+const ResetPassword = page(() => import('./pages/Auth.jsx'), 'ResetPassword')
 
 // Shown for the split second a page chunk is loading
 function PageLoading() {
@@ -41,44 +46,50 @@ function PageLoading() {
 // prerenderer (entry-server.jsx) in StaticRouter.
 export default function App() {
   return (
-    <CartProvider>
-      <ScrollToTop />
-      <a href="#main" className="skip-link">
-        Skip to content
-      </a>
-      <Suspense fallback={<PageLoading />}>
-        <Routes>
-          <Route path="/" element={<Home />} />
+    <AuthProvider>
+      <CartProvider>
+        <ScrollToTop />
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
+        <Suspense fallback={<PageLoading />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
 
-          <Route path="/blog" element={<BlogHome />} />
-          <Route path="/blog/:slug" element={<Article />} />
+            <Route path="/blog" element={<BlogHome />} />
+            <Route path="/blog/:slug" element={<Article />} />
 
-          <Route path="/shop" element={<ShopHome />} />
-          <Route path="/shop/category/:slug" element={<Category />} />
-          <Route path="/shop/product/:id" element={<Product />} />
-          <Route path="/shop/cart" element={<Cart />} />
-          <Route path="/shop/checkout" element={<Checkout />} />
-          <Route path="/shop/order/:id" element={<OrderConfirmation />} />
-          <Route path="/shop/track" element={<Track />} />
-          <Route path="/account" element={<Account />} />
-          <Route path="/faq" element={<Faq />} />
+            <Route path="/shop" element={<ShopHome />} />
+            <Route path="/shop/category/:slug" element={<Category />} />
+            <Route path="/shop/product/:id" element={<Product />} />
+            <Route path="/shop/cart" element={<Cart />} />
+            <Route path="/shop/checkout" element={<Checkout />} />
+            <Route path="/shop/order/:id" element={<OrderConfirmation />} />
+            <Route path="/shop/track" element={<Track />} />
+            <Route path="/account" element={<Account />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/faq" element={<Faq />} />
 
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/schools" element={<Schools />} />
-          <Route path="/final-year-projects" element={<FinalYearProjects />} />
-          <Route path="/request-a-part" element={<RequestPart />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/schools" element={<Schools />} />
+            <Route path="/final-year-projects" element={<FinalYearProjects />} />
+            <Route path="/request-a-part" element={<RequestPart />} />
 
-          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/terms" element={<Terms />} />
-          <Route path="/refund-policy" element={<RefundPolicy />} />
-          <Route path="/shipping-policy" element={<ShippingPolicy />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/refund-policy" element={<RefundPolicy />} />
+            <Route path="/shipping-policy" element={<ShippingPolicy />} />
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-        <CookieConsent />
-    </CartProvider>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+          <CookieConsent />
+      </CartProvider>
+    </AuthProvider>
   )
 }

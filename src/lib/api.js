@@ -1,0 +1,47 @@
+// Thin client for the CircuitBay API (server/). Same-origin `/api` in
+// development (Vite proxies it); set VITE_API_URL=https://api.circuitbay.in
+// for production builds. The session lives in an httpOnly cookie, so every
+// request is sent with credentials.
+const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
+
+export class ApiError extends Error {
+  constructor(status, code, message, details) {
+    super(message)
+    this.status = status
+    this.code = code
+    this.details = details
+  }
+}
+
+async function request(method, path, body) {
+  let res
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      method,
+      credentials: 'include',
+      // The API only accepts JSON writes (CSRF protection)
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    throw new ApiError(0, 'network', "Can't reach CircuitBay right now. Check your connection and try again.")
+  }
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    const e = data?.error ?? {}
+    throw new ApiError(res.status, e.code ?? 'error', e.message ?? 'Something went wrong. Please try again.', e.details)
+  }
+  return data
+}
+
+export const api = {
+  get: (path) => request('GET', path),
+  post: (path, body = {}) => request('POST', path, body),
+  put: (path, body = {}) => request('PUT', path, body),
+  patch: (path, body = {}) => request('PATCH', path, body),
+  del: (path) => request('DELETE', path),
+}
+
+// Field-level messages from a 400 response: { email: '…', 'address.pin': '…' }
+export const fieldErrors = (err) =>
+  Object.fromEntries((err?.details ?? []).filter((d) => d.path).map((d) => [d.path, d.message]))

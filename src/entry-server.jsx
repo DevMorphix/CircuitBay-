@@ -53,4 +53,4 @@ export const indexableRoutes = [
 
 // Private / per-visitor pages: served as an empty app shell (noindex),
 // rendered in the browser.
-export const shellRoutes = ['/shop/cart', '/shop/checkout', '/shop/track', '/shop/order/*', '/account']
+export const shellRoutes = ['/shop/cart', '/shop/checkout', '/shop/track', '/shop/order/*', '/account', '/login', '/register', '/forgot-password', '/reset-password']

@@ -60,11 +60,14 @@ export function useCart() {
   return ctx
 }
 
-// Shared order-summary maths (cart + checkout). TODO_CLIENT: confirm
-// shipping threshold/fee and GST handling.
+// Estimated totals for the cart and checkout summary. Mirrors
+// server/src/lib/money.js (computed in paise so rounding matches); the
+// server's totals are final and replace this once checkout starts.
 // eslint-disable-next-line react/only-export-components
-export function summarise(subtotal) {
-  const shipping = subtotal === 0 || subtotal >= 999 ? 0 : 79
-  const tax = Math.round(subtotal * 0.18)
-  return { subtotal, shipping, tax, total: subtotal + shipping + tax }
+export function summarise(subtotal, shippingMethod = 'standard') {
+  const sub = Math.round(subtotal * 100)
+  let ship = shippingMethod === 'express' ? 149_00 : 79_00
+  if ((shippingMethod === 'standard' && sub >= 999_00) || sub === 0) ship = 0
+  const tax = Math.round(sub * 0.18)
+  return { subtotal, shipping: ship / 100, tax: tax / 100, total: (sub + ship + tax) / 100 }
 }

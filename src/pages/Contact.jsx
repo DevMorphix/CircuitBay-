@@ -1,11 +1,12 @@
-import { useState } from 'react'
 import { PageShell } from '../components/layout/PageShell.jsx'
 import { PageHero, Section } from '../components/ui/Section.jsx'
 import { Button } from '../components/ui/Button.jsx'
 import { Card } from '../components/ui/Card.jsx'
 import { Icon, IconTile } from '../components/ui/Icon.jsx'
 import { contact, educators } from '../content/siteContent.js'
-import { trackEvent } from '../lib/analytics.js'
+import { api } from '../lib/api.js'
+import { useSubmit } from '../lib/useSubmit.js'
+import { FieldError, FormError, FormSent, Honeypot } from '../components/ui/FormBits.jsx'
 import { schema } from '../lib/seo.js'
 
 // D2 — general form with "I am a" dropdown, direct channels, and a separate
@@ -33,15 +34,16 @@ export function Contact() {
             <h2 className="font-heading text-2xl font-semibold text-ink-900">Send a message</h2>
             <ContactForm
               name="contact"
-              fields={
+              send={(d) => api.post('/forms/contact', d)}
+              fields={(fe) => (
                 <>
-                  <Field label="Name" id="c-name" required />
-                  <Field label="Email" id="c-email" type="email" required />
+                  <Field label="Name" id="c-name" name="name" required error={fe.name} />
+                  <Field label="Email" id="c-email" name="email" type="email" required error={fe.email} />
                   <div>
                     <label htmlFor="c-role" className="mb-1.5 block text-sm font-medium text-ink-900">
                       I am a
                     </label>
-                    <select id="c-role" required defaultValue="" className="field">
+                    <select id="c-role" name="role" required defaultValue="" className="field">
                       <option value="" disabled>
                         Choose one
                       </option>
@@ -50,10 +52,10 @@ export function Contact() {
                       ))}
                     </select>
                   </div>
-                  <Field label="Phone (optional)" id="c-phone" type="tel" />
-                  <Field label="Message" id="c-msg" textarea required className="sm:col-span-2" />
+                  <Field label="Phone (optional)" id="c-phone" name="phone" type="tel" error={fe.phone} />
+                  <Field label="Message" id="c-msg" name="message" textarea required minLength={5} className="sm:col-span-2" error={fe.message} />
                 </>
-              }
+              )}
             />
           </Card>
 
@@ -101,17 +103,18 @@ export function Contact() {
               name="workshop"
               dark
               cta="Request a workshop"
-              fields={
+              send={(d) => api.post('/forms/workshop-requests', { ...d, studentCount: d.studentCount ? Number(d.studentCount) : undefined })}
+              fields={(fe) => (
                 <>
-                  <Field dark label="Institution name" id="w-inst" required />
-                  <Field dark label="Contact person" id="w-name" required />
-                  <Field dark label="Email" id="w-email" type="email" required />
-                  <Field dark label="Phone" id="w-phone" type="tel" required />
+                  <Field dark label="Institution name" id="w-inst" name="institution" required error={fe.institution} />
+                  <Field dark label="Contact person" id="w-name" name="contactName" required error={fe.contactName} />
+                  <Field dark label="Email" id="w-email" name="email" type="email" required error={fe.email} />
+                  <Field dark label="Mobile number" id="w-phone" name="phone" type="tel" required error={fe.phone} />
                   <div>
                     <label htmlFor="w-type" className="mb-1.5 block text-sm font-medium text-white">
                       Interested in
                     </label>
-                    <select id="w-type" className="field" defaultValue={educators.cards[0].title}>
+                    <select id="w-type" name="interest" className="field" defaultValue={educators.cards[0].title}>
                       {educators.cards.map((c) => (
                         <option key={c.title} className="text-ink-900">
                           {c.title}
@@ -119,10 +122,10 @@ export function Contact() {
                       ))}
                     </select>
                   </div>
-                  <Field dark label="Approx. number of students" id="w-count" type="number" />
-                  <Field dark label="Anything else?" id="w-msg" textarea className="sm:col-span-2" />
+                  <Field dark label="Approx. number of students" id="w-count" name="studentCount" type="number" min="1" error={fe.studentCount} />
+                  <Field dark label="Anything else?" id="w-msg" name="message" textarea className="sm:col-span-2" error={fe.message} />
                 </>
-              }
+              )}
             />
           </div>
         </div>
@@ -131,42 +134,46 @@ export function Contact() {
   )
 }
 
-function ContactForm({ name, fields, dark = false, cta = 'Send message' }) {
-  const [sent, setSent] = useState(false)
+// Posts the form's named fields with `send`; `fields(errors)` renders them
+// with any per-field messages from the API.
+function ContactForm({ name, send, fields, dark = false, cta = 'Send message' }) {
+  const form = useSubmit(name, send)
 
-  if (sent) {
+  if (form.sent) {
     return (
-      <div role="status" className="mt-6 flex items-start gap-3">
-        <Icon name="check" className={dark ? 'text-brand-300' : 'text-brand-500'} />
-        <p className={dark ? 'text-white' : 'text-ink-900'}>Thanks — we've got it. We'll reply within one working day.</p>
+      <div className="mt-6">
+        <FormSent dark={dark}>Thanks — we've got it. We'll reply within one working day.</FormSent>
       </div>
     )
   }
 
   return (
-    <form
-      className="mt-6 grid gap-5 sm:grid-cols-2"
-      onSubmit={(e) => {
-        e.preventDefault()
-        trackEvent('form_submit', { form: name })
-        setSent(true)
-      }}
-    >
-      {fields}
-      <div className="sm:col-span-2">
-        <Button type="submit">{cta} →</Button>
+    <form className="relative mt-6 grid gap-5 sm:grid-cols-2" onSubmit={form.onSubmit}>
+      <Honeypot />
+      {fields(form.fields)}
+      <div className="space-y-3 sm:col-span-2">
+        <FormError message={form.error} dark={dark} />
+        <Button type="submit" disabled={form.sending}>
+          {form.sending ? 'Sending…' : `${cta} →`}
+        </Button>
       </div>
     </form>
   )
 }
 
-function Field({ label, id, textarea = false, dark = false, className = '', ...rest }) {
+function Field({ label, id, textarea = false, dark = false, className = '', error, ...rest }) {
+  const describedBy = error ? `${id}-err` : undefined
   return (
     <div className={className}>
       <label htmlFor={id} className={`mb-1.5 block text-sm font-medium ${dark ? 'text-white' : 'text-ink-900'}`}>
         {label}
       </label>
-      {textarea ? <textarea id={id} rows={4} className="field" {...rest} /> : <input id={id} className="field" {...rest} />}
+      {textarea ? (
+        <textarea id={id} rows={4} className="field" aria-invalid={Boolean(error)} aria-describedby={describedBy} {...rest} />
+      ) : (
+        <input id={id} className="field" aria-invalid={Boolean(error)} aria-describedby={describedBy} {...rest} />
+      )}
+      <FieldError id={describedBy} message={error} dark={dark} />
     </div>
   )
 }

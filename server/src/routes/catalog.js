@@ -126,6 +126,19 @@ catalog.get('/products', cached(60), query(listQuery), async (c) => {
   })
 })
 
+// GET /stock?ids=a,b — live stock, never cached. Product data is cached for
+// scale, so pages read stock here to avoid showing sold-out items as
+// available. Cheap: a primary-key lookup per id.
+catalog.get('/stock', query(z.object({ ids: csv })), async (c) => {
+  const { ids } = c.req.valid('query')
+  const list = [...new Set(ids)].slice(0, 50)
+  const rows = list.length
+    ? await c.var.svc.db.all(`SELECT id, stock FROM products WHERE active = 1 AND id IN (${list.map(() => '?').join(',')})`, list)
+    : []
+  c.header('Cache-Control', 'no-store')
+  return c.json({ stock: Object.fromEntries(rows.map((r) => [r.id, r.stock])) })
+})
+
 catalog.get('/products/:id', cached(60), async (c) => {
   const { db, config } = c.var.svc
   const row = await db.first('SELECT * FROM products WHERE id = ? AND active = 1', [c.req.param('id')])
