@@ -1,0 +1,41 @@
+name = "circuitbay-api"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Every 10 min: release stock held by unpaid checkouts (30-min hold),
+# clear expired sessions / codes / rate-limit windows
+[triggers]
+crons = ["*/10 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "circuitbay"
+# TODO: run `npx wrangler d1 create circuitbay` and paste the id here
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "BUCKET"
+# TODO: run `npx wrangler r2 bucket create circuitbay-media`
+bucket_name = "circuitbay-media"
+
+# Non-secret configuration. Secrets (RAZORPAY_KEY_SECRET,
+# RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY, MSG91_AUTH_KEY) are set with
+# `npx wrangler secret put NAME` — never commit them here.
+[vars]
+APP_ENV = "production"
+SITE_URL = "https://circuitbay.in"
+API_PUBLIC_URL = "https://api.circuitbay.in"
+CORS_ORIGINS = "https://circuitbay.in,https://www.circuitbay.in,https://shop.circuitbay.in"
+COOKIE_DOMAIN = ".circuitbay.in"
+PAYMENTS_PROVIDER = "razorpay"
+EMAIL_PROVIDER = "resend"
+EMAIL_FROM = "CircuitBay <hello@circuitbay.in>"
+SMS_PROVIDER = "msg91"
+# ADMIN_EMAILS = "founder@circuitbay.in"
+# MEDIA_PUBLIC_URL = "https://media.circuitbay.in"
+# RAZORPAY_KEY_ID = "rzp_live_xxx"
+# MSG91_OTP_TEMPLATE_ID = "xxx"
+
+# `wrangler dev` reads local overrides from .dev.vars (see .dev.vars.example)

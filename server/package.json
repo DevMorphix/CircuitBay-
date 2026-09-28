@@ -1,0 +1,32 @@
+{
+  "name": "circuitbay-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/node.js",
+    "start": "node --env-file-if-exists=.env src/node.js",
+    "dev:worker": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "node --env-file-if-exists=.env scripts/migrate-local.js",
+    "db:migrate:d1": "wrangler d1 migrations apply circuitbay --remote",
+    "db:seed:build": "node scripts/build-seed.js",
+    "db:seed:local": "node scripts/build-seed.js && node --env-file-if-exists=.env scripts/migrate-local.js --seed",
+    "db:seed:d1": "node scripts/build-seed.js && wrangler d1 execute circuitbay --remote --file seed/seed.sql",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@hono/zod-validator": "^0.9.1",
+    "aws4fetch": "^1.0.20",
+    "hono": "^4.13.9",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.2",
+    "wrangler": "^4.142.0"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+.data/
+.wrangler/
+.env
+.dev.vars
+seed/seed.sql

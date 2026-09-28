@@ -1,0 +1,11 @@
+# Copy to .dev.vars for `npm run dev:worker` (wrangler dev with local D1 +
+# R2 simulation). Overrides [vars] in wrangler.toml.
+APP_ENV=development
+SITE_URL=http://localhost:5173
+API_PUBLIC_URL=http://localhost:8787
+CORS_ORIGINS=http://localhost:5173
+COOKIE_DOMAIN=
+PAYMENTS_PROVIDER=fake
+EMAIL_PROVIDER=console
+SMS_PROVIDER=console
+ADMIN_EMAILS=you@example.com

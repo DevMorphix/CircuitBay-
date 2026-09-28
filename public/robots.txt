@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+# Private, per-visitor pages
+Disallow: /account
+Disallow: /shop/checkout
+Disallow: /shop/order/
+# Internal search results
+Disallow: /*?q=
+
+Sitemap: https://circuitbay.in/sitemap.xml
