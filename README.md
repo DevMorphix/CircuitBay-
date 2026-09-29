@@ -85,6 +85,7 @@ the API checks the role on every request).
 | Dashboard | 30-day sales, orders to fulfil, refunds needed, low stock, inbox counts |
 | Orders | Search/filter; move orders placed → confirmed → packed → shipped (courier + tracking no.) → delivered, with customer emails; cancel (stock returns); refund through Razorpay in one click; GST invoice |
 | Products | Create/edit (photos, datasheet PDF, specs, badges, kit contents), quick stock edits, hide from shop |
+| Coupons | Create percent, rupees-off or free-shipping codes with a minimum order, dates and use limits; switch off any time; see paid orders and discount given per code |
 | Inbox | Contact messages and part requests, workshop requests (new → contacted → scheduled → closed), newsletter list + CSV export |
 | Projects | Review community submissions, edit, add a photo, publish/feature/reject |
 | Articles | Block editor (headings, paragraphs, lists, tables, code), cover image, drafts |
@@ -109,7 +110,7 @@ placeholder that needs real client input.
 - [x] Refunds sent from admin through Razorpay's API (one click, can't double-refund, customer emailed; failed refunds reopen via webhook)
 - [x] Error monitoring (Sentry for the site and API; friendly error screen) + analytics (GA4 e-commerce events, after consent)
 - [x] Email polish: branded HTML emails (with text versions), email confirmation on sign-up / email change, newsletter welcome + unsubscribe page + one-click unsubscribe, optional Resend audience sync
-- [ ] Coupons (the coupon box is on screen but not connected)
+- [x] Coupons: percent / rupees off / free shipping, minimum order, dates, total and per-customer limits; applied before GST (shown on the invoice); uses reserved at checkout and given back if unpaid; admin screen with usage
 - [ ] Reviews from verified buyers (so ratings can be shown honestly)
 - [ ] Courier integration (e.g. Shiprocket) for automatic tracking updates
 - [ ] Automated browser tests for sign-in, checkout and admin
@@ -120,7 +121,7 @@ placeholder that needs real client input.
 - [ ] Company story, founder bio and photo, real stats, school logos, project photos and builder names
 - [ ] Logo files, social links, contact email/phone/address
 - [ ] Shipping fees, return window, FAQ answers
-- [ ] GST decisions with the CA: prices shown with or without GST (today: GST is added at checkout), GST on shipping, invoice layout review
+- [ ] GST decisions with the CA: prices shown with or without GST (today: GST is added at checkout), GST on shipping, invoice layout review, coupon discounts shown on the invoice before tax
 - [ ] GST details: legal name, GSTIN, registered address/state (API settings `BUSINESS_*`) and an HSN code for every product
 - [ ] Privacy, terms, refund and shipping policies reviewed by a lawyer
 - [ ] ATL package details and regions served (`/schools`)

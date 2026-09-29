@@ -154,6 +154,105 @@ admin.put(
   },
 )
 
+// -------------------------------------------------------------- coupons --
+const couponOut = (c) => ({
+  code: c.code,
+  description: c.description,
+  kind: c.kind,
+  // percent: the % off; amount: rupees off; free_shipping: 0
+  value: c.kind === 'amount' ? c.value / 100 : c.value,
+  maxDiscount: c.max_discount_paise == null ? null : c.max_discount_paise / 100,
+  minSubtotal: c.min_subtotal_paise / 100,
+  startsAt: c.starts_at,
+  endsAt: c.ends_at,
+  maxUses: c.max_uses,
+  perCustomer: c.per_customer,
+  usedCount: c.used_count,
+  active: Boolean(c.active),
+  paidOrders: c.paid_orders ?? 0,
+  discountGiven: (c.discount_given ?? 0) / 100,
+  createdAt: c.created_at,
+})
+
+const couponIn = z
+  .object({
+    description: z.string().trim().max(200).optional().nullable(),
+    kind: z.enum(['percent', 'amount', 'free_shipping']),
+    value: z.number().min(0).max(1_000_000).default(0),
+    maxDiscount: z.number().positive().max(1_000_000).optional().nullable(),
+    minSubtotal: z.number().min(0).max(10_000_000).default(0),
+    startsAt: z.number().int().positive().optional().nullable(),
+    endsAt: z.number().int().positive().optional().nullable(),
+    maxUses: z.number().int().min(1).max(10_000_000).optional().nullable(),
+    perCustomer: z.number().int().min(1).max(1000).optional().nullable(),
+    active: z.boolean().default(true),
+  })
+  .superRefine((c, ctx) => {
+    if (c.kind === 'percent' && !(Number.isInteger(c.value) && c.value >= 1 && c.value <= 100)) {
+      ctx.addIssue({ code: 'custom', path: ['value'], message: 'Enter a whole percentage from 1 to 100.' })
+    }
+    if (c.kind === 'amount' && !(c.value > 0)) ctx.addIssue({ code: 'custom', path: ['value'], message: 'Enter the amount off in rupees.' })
+    if (c.startsAt && c.endsAt && c.endsAt <= c.startsAt) ctx.addIssue({ code: 'custom', path: ['endsAt'], message: 'The end must be after the start.' })
+  })
+
+const couponParams = (c, now) => [
+  c.description || null,
+  c.kind,
+  c.kind === 'amount' ? rupeesToPaise(c.value) : c.kind === 'percent' ? c.value : 0,
+  c.kind === 'percent' && c.maxDiscount ? rupeesToPaise(c.maxDiscount) : null,
+  rupeesToPaise(c.minSubtotal),
+  c.startsAt ?? null,
+  c.endsAt ?? null,
+  c.maxUses ?? null,
+  c.perCustomer ?? null,
+  c.active ? 1 : 0,
+  now,
+]
+
+// Usage figures count paid orders only (not abandoned checkouts)
+const COUPON_SELECT = `SELECT c.*,
+    (SELECT COUNT(*) FROM orders o WHERE o.coupon_code = c.code AND o.paid_at IS NOT NULL AND o.status != 'cancelled') AS paid_orders,
+    (SELECT SUM(discount_paise) FROM orders o WHERE o.coupon_code = c.code AND o.paid_at IS NOT NULL AND o.status != 'cancelled') AS discount_given
+  FROM coupons c`
+
+admin.get('/coupons', async (c) => {
+  const rows = await c.var.svc.db.all(`${COUPON_SELECT} ORDER BY c.active DESC, c.created_at DESC LIMIT 500`)
+  return c.json({ coupons: rows.map(couponOut) })
+})
+
+admin.post('/coupons', body(couponIn.and(z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,30}$/, 'Use 3–30 letters, numbers, - or _.') }))), async (c) => {
+  const { db } = c.var.svc
+  const d = c.req.valid('json')
+  if (await db.first('SELECT 1 FROM coupons WHERE code = ?', [d.code])) throw conflict('A coupon with this code already exists.')
+  const now = Date.now()
+  await db.run(
+    `INSERT INTO coupons (description, kind, value, max_discount_paise, min_subtotal_paise, starts_at, ends_at, max_uses, per_customer, active, updated_at, code, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [...couponParams(d, now), d.code, now],
+  )
+  return c.json({ coupon: couponOut(await db.first(`${COUPON_SELECT} WHERE c.code = ?`, [d.code])) }, 201)
+})
+
+// The code itself can't change (past orders refer to it); switch a coupon
+// off with `active: false` instead of deleting it.
+admin.put('/coupons/:code', body(couponIn), async (c) => {
+  const { db } = c.var.svc
+  const code = c.req.param('code')
+  let res
+  try {
+    res = await db.run(
+      `UPDATE coupons SET description = ?, kind = ?, value = ?, max_discount_paise = ?, min_subtotal_paise = ?, starts_at = ?, ends_at = ?,
+         max_uses = ?, per_customer = ?, active = ?, updated_at = ? WHERE code = ?`,
+      [...couponParams(c.req.valid('json'), Date.now()), code],
+    )
+  } catch (err) {
+    if (/coupon_uses/.test(String(err?.message))) throw badRequest('The use limit can’t be lower than the times it has already been used.', [{ path: 'maxUses', message: 'Lower than the uses so far.' }])
+    throw err
+  }
+  if (!res.changes) throw notFound('Coupon not found.')
+  return c.json({ coupon: couponOut(await db.first(`${COUPON_SELECT} WHERE c.code = ?`, [code])) })
+})
+
 // --------------------------------------------------------------- orders --
 admin.get('/orders', query(z.object({ status: z.string().optional(), q: z.string().max(100).optional(), ...page })), async (c) => {
   const { db } = c.var.svc

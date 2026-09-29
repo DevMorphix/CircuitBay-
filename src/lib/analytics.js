@@ -54,5 +54,6 @@ export const trackPurchase = (orderId, totals, lines) =>
     value: totals.total,
     tax: totals.tax,
     shipping: totals.shipping,
+    ...(totals.coupon ? { coupon: totals.coupon.code } : {}),
     items: lines.map((l) => item(l.product, l.qty)),
   })

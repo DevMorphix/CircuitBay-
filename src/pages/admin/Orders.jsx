@@ -138,12 +138,13 @@ export function OrderDetail() {
                 <dl className="mt-3 space-y-1 border-t border-black/5 pt-3 text-sm">
                   {[
                     ['Subtotal', o.totals.subtotal],
+                    ...(o.totals.discount ? [[`Coupon ${o.couponCode}`, -o.totals.discount]] : []),
                     [`Shipping (${o.shippingMethod})`, o.totals.shipping],
                     ['GST', o.totals.tax],
                   ].map(([k, v]) => (
                     <div key={k} className="flex justify-between text-ink-600">
                       <dt>{k}</dt>
-                      <dd>{rupees(v)}</dd>
+                      <dd>{v < 0 ? `−${rupees(-v)}` : rupees(v)}</dd>
                     </div>
                   ))}
                   <div className="flex justify-between pt-1 font-semibold text-ink-900">

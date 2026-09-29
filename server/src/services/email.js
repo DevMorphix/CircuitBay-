@@ -146,7 +146,10 @@ export const emails = {
       subject: `Order ${order.id} confirmed — it's on its way to your bench`,
       heading: `Thanks, ${order.contact_name.split(' ')[0]}! Your order is confirmed.`,
       paragraphs: [`Order ${order.id}${order.invoice_no ? ` · GST invoice ${order.invoice_no}` : ''}`],
-      table: items.map((i) => ({ label: `${i.name} × ${i.qty}`, value: rupees(i.unit_price_paise * i.qty) })),
+      table: [
+        ...items.map((i) => ({ label: `${i.name} × ${i.qty}`, value: rupees(i.unit_price_paise * i.qty) })),
+        ...(order.discount_paise ? [{ label: `Coupon ${order.coupon_code}`, value: `−${rupees(order.discount_paise)}` }] : []),
+      ],
       total: { label: 'Total paid (incl. GST and shipping)', value: rupees(order.total_paise) },
       button: { label: 'Track your order', url: `${siteUrl}/shop/track?order=${order.id}` },
       after: ['Your GST invoice is on the tracking page and under My account → Orders.'],

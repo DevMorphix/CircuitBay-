@@ -967,3 +967,119 @@ describe('response cache', () => {
     expect(hit.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
   })
 })
+
+describe('coupon pricing', () => {
+  it('splits a discount across lines exactly, lowering each taxable value before GST', async () => {
+    const { allocate, priceLines } = await import('../src/lib/money.js')
+    expect(allocate(100, [1, 1, 1])).toEqual([34, 33, 33])
+    expect(allocate(0, [5, 5])).toEqual([0, 0])
+
+    const coupon = { kind: 'percent', value: 10, max_discount_paise: null }
+    const t = priceLines([{ unitPricePaise: 100000, qty: 1, gstRate: 18 }, { unitPricePaise: 30000, qty: 1, gstRate: 5 }], 'standard', coupon)
+    expect(t.discount).toBe(13000)
+    expect(t.lines.map((l) => l.discountPaise)).toEqual([10000, 3000])
+    expect(t.lines.map((l) => l.taxPaise)).toEqual([16200, 1350]) // 18% of 90,000 and 5% of 27,000
+    expect(t.total).toBe(130000 - 13000 + 0 + 17550) // free shipping: ₹1,170 ≥ ₹999 after discount
+  })
+
+  it('caps percent coupons, never discounts below zero, and free_shipping waives shipping', async () => {
+    const { priceLines } = await import('../src/lib/money.js')
+    expect(priceLines([{ unitPricePaise: 500000, qty: 1 }], 'standard', { kind: 'percent', value: 50, max_discount_paise: 20000 }).discount).toBe(20000)
+    expect(priceLines([{ unitPricePaise: 10000, qty: 1 }], 'standard', { kind: 'amount', value: 50000 }).discount).toBe(10000)
+    const ship = priceLines([{ unitPricePaise: 10000, qty: 1 }], 'express', { kind: 'free_shipping', value: 0 })
+    expect(ship).toMatchObject({ discount: 0, shipping: 0 })
+  })
+})
+
+describe('coupons', () => {
+  const { app, db } = setup()
+  const admin = client(app)
+  const shopper = client(app)
+  const cart = [{ productId: 'esp32-iot-starter', qty: 1 }]
+  const pay = async (api, res) =>
+    api.post('/api/checkout/verify', { orderId: res.body.orderId, razorpay_order_id: res.body.payment.orderId, razorpay_payment_id: `pay_${res.body.orderId}`, razorpay_signature: 'fake-ok' })
+
+  beforeAll(async () => {
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+  })
+
+  it('admins create and edit coupons, with validation', async () => {
+    expect((await shopper.post('/api/admin/coupons', { code: 'X', kind: 'percent', value: 10 })).status).toBe(401)
+    const bad = await admin.post('/api/admin/coupons', { code: 'BAD', kind: 'percent', value: 150 })
+    expect(bad.status).toBe(400)
+    expect(bad.body.error.details[0].path).toBe('value')
+
+    const res = await admin.post('/api/admin/coupons', { code: 'welcome10', kind: 'percent', value: 10, maxDiscount: 100, minSubtotal: 500, maxUses: 2, perCustomer: 1 })
+    expect(res.status).toBe(201)
+    expect(res.body.coupon).toMatchObject({ code: 'WELCOME10', value: 10, maxDiscount: 100, minSubtotal: 500, usedCount: 0, active: true })
+    expect((await admin.post('/api/admin/coupons', { code: 'WELCOME10', kind: 'amount', value: 50 })).status).toBe(409)
+    expect((await admin.post('/api/admin/coupons', { code: 'FLAT50', kind: 'amount', value: 50 })).status).toBe(201)
+  })
+
+  it('quotes a cart with a coupon, and explains why a code does not apply', async () => {
+    const q = await shopper.post('/api/checkout/quote', { items: cart, couponCode: ' welcome10 ' })
+    expect(q.status).toBe(200)
+    // 10% of ₹1,499 = ₹149.90, capped at ₹100; GST on ₹1,399
+    expect(q.body.totals).toMatchObject({ subtotal: 1499, discount: 100, shipping: 0, tax: 251.82, total: 1650.82, coupon: { code: 'WELCOME10', summary: '10% off (up to ₹100)' } })
+
+    const unknown = await shopper.post('/api/checkout/quote', { items: cart, couponCode: 'NOPE' })
+    expect(unknown.status).toBe(400)
+    expect(unknown.body.error.details[0]).toMatchObject({ path: 'couponCode', message: `"NOPE" isn't a valid coupon code.` })
+    const small = await shopper.post('/api/checkout/quote', { items: [{ productId: 'hc-sr04', qty: 1 }], couponCode: 'WELCOME10' })
+    expect(small.body.error.message).toContain('needs ₹500')
+  })
+
+  it('checks out with a coupon: discounted totals, per-line discounts, a reserved use, and the invoice shows it', async () => {
+    const res = await shopper.post('/api/checkout', { ...checkoutBody(cart), couponCode: 'WELCOME10' })
+    expect(res.status).toBe(201)
+    expect(res.body.totals).toMatchObject({ discount: 100, total: 1650.82 })
+    expect(res.body.payment.amount).toBe(165082)
+    const order = await db.first('SELECT coupon_code, discount_paise, total_paise FROM orders WHERE id = ?', [res.body.orderId])
+    expect(order).toMatchObject({ coupon_code: 'WELCOME10', discount_paise: 10000, total_paise: 165082 })
+    expect((await db.first('SELECT SUM(discount_paise) AS d FROM order_items WHERE order_id = ?', [res.body.orderId])).d).toBe(10000)
+    expect((await db.first(`SELECT used_count FROM coupons WHERE code = 'WELCOME10'`)).used_count).toBe(1)
+
+    expect((await pay(shopper, res)).status).toBe(200)
+    const invoice = await admin.get(`/api/admin/orders/${res.body.orderId}/invoice`)
+    expect(invoice.body).toContain('Discount (₹)')
+    expect(invoice.body).toContain('coupon <strong>WELCOME10</strong>')
+    expect((await admin.get(`/api/admin/orders/${res.body.orderId}`)).body.order.totals.discount).toBe(100)
+  })
+
+  it('limits uses per customer, and in total', async () => {
+    const again = await shopper.post('/api/checkout', { ...checkoutBody(cart), couponCode: 'WELCOME10' })
+    expect(again.status).toBe(400)
+    expect(again.body.error.message).toBe(`You've already used WELCOME10.`)
+
+    const other = { ...checkoutBody(cart), couponCode: 'WELCOME10' }
+    other.contact = { ...other.contact, email: 'second@example.com' }
+    expect((await client(app).post('/api/checkout', other)).status).toBe(201) // use 2 of 2
+    other.contact = { ...other.contact, email: 'third@example.com' }
+    const full = await client(app).post('/api/checkout', other)
+    expect(full.status).toBe(400)
+    expect(full.body.error.message).toBe('WELCOME10 has been fully used.')
+  })
+
+  it('gives the use back when an unpaid checkout expires', async () => {
+    const pending = await db.first(`SELECT id FROM orders WHERE coupon_code = 'WELCOME10' AND status = 'pending_payment'`)
+    await db.run('UPDATE orders SET created_at = ? WHERE id = ?', [Date.now() - (HOLD_MINUTES + 1) * 60_000, pending.id])
+    await runMaintenance(db)
+    expect((await db.first(`SELECT used_count FROM coupons WHERE code = 'WELCOME10'`)).used_count).toBe(1)
+  })
+
+  it('respects dates and the on/off switch; lists paid usage for admins', async () => {
+    const base = { kind: 'amount', value: 50, minSubtotal: 0 }
+    await admin.put('/api/admin/coupons/FLAT50', { ...base, endsAt: Date.now() - 1000 })
+    expect((await shopper.post('/api/checkout/quote', { items: cart, couponCode: 'FLAT50' })).body.error.message).toBe('FLAT50 has expired.')
+    await admin.put('/api/admin/coupons/FLAT50', { ...base, active: false })
+    expect((await shopper.post('/api/checkout/quote', { items: cart, couponCode: 'FLAT50' })).status).toBe(400)
+    // A use limit can go down to the uses so far, not below
+    expect((await admin.put('/api/admin/coupons/WELCOME10', { kind: 'percent', value: 10, maxUses: 1, perCustomer: 1 })).status).toBe(200)
+    await admin.put('/api/admin/coupons/WELCOME10', { kind: 'percent', value: 10 })
+    await db.run(`UPDATE coupons SET used_count = 2 WHERE code = 'WELCOME10'`)
+    expect((await admin.put('/api/admin/coupons/WELCOME10', { kind: 'percent', value: 10, maxUses: 1 })).status).toBe(400)
+
+    const list = await admin.get('/api/admin/coupons')
+    expect(list.body.coupons.find((c) => c.code === 'WELCOME10')).toMatchObject({ paidOrders: 1, discountGiven: 100 })
+  })
+})

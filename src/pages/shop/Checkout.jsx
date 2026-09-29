@@ -24,7 +24,7 @@ const SHIPPING = [
 // Flow: POST /api/checkout (server prices the cart and reserves stock for
 // 30 min) → Razorpay payment window → POST /api/checkout/verify.
 export function Checkout() {
-  const { items, subtotal, clear } = useCart()
+  const { items, subtotal, coupon, setCoupon, clear } = useCart()
   const { user } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
@@ -68,6 +68,7 @@ export function Checkout() {
       contact: { name: form.name, email: form.email, phone: form.phone },
       address: { line1: form.line1, line2: form.line2 || undefined, city: form.city, state: form.state, pin: form.pin },
       shippingMethod: shipping,
+      couponCode: coupon || undefined,
     })
     setPending(res)
     return res
@@ -99,6 +100,11 @@ export function Checkout() {
       } else if (err?.status === 409) {
         setPending(null)
         setError({ message: err.message, items: err.details ?? [] })
+      } else if (err?.status === 400 && fieldErrors(err).couponCode) {
+        // The coupon stopped applying (used up, expired, already used by
+        // this email) — drop it; the summary shows the new total
+        setCoupon('')
+        setError({ message: `${err.message} We've removed it — check the new total, then pay.` })
       } else if (err?.status === 400 && !order) {
         setStep(0)
         setError({ message: err.message, fields: fieldErrors(err) })
@@ -218,7 +224,7 @@ export function Checkout() {
           </div>
 
           <div className="lg:sticky lg:top-40 lg:self-start">
-            <OrderSummary items={items} subtotal={subtotal} shippingMethod={shipping} serverTotals={serverTotals} showItems showCoupon={false} />
+            <OrderSummary items={items} subtotal={subtotal} shippingMethod={shipping} serverTotals={serverTotals} email={form.email} showItems showCoupon={!pending} />
           </div>
         </div>
       </Section>

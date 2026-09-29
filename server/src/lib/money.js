@@ -10,18 +10,53 @@ export const FREE_SHIPPING_MIN_PAISE = 999_00
 export const SHIPPING_FEES_PAISE = { standard: 79_00, express: 149_00 }
 export const DEFAULT_GST_RATE = 18
 
-// lines: [{ unitPricePaise, qty, gstRate? }]
-export function priceLines(lines, shippingMethod = 'standard') {
-  const priced = lines.map((l) => {
-    const taxable = l.unitPricePaise * l.qty
+// Discount (paise) a coupon gives on an item subtotal, before GST.
+// `coupon` is a coupons row; free_shipping coupons discount shipping instead.
+export function couponDiscount(coupon, subtotalPaise) {
+  if (!coupon) return 0
+  if (coupon.kind === 'percent') {
+    const d = Math.floor((subtotalPaise * coupon.value) / 100)
+    return Math.min(d, coupon.max_discount_paise ?? d)
+  }
+  if (coupon.kind === 'amount') return Math.min(coupon.value, subtotalPaise)
+  return 0
+}
+
+// Splits `total` across `weights` in proportion, in whole paise, so the
+// parts always add up exactly (largest remainders get the spare paise).
+export function allocate(total, weights) {
+  const sum = weights.reduce((n, w) => n + w, 0)
+  if (!total || !sum) return weights.map(() => 0)
+  const exact = weights.map((w) => (total * w) / sum)
+  const parts = exact.map(Math.floor)
+  let spare = total - parts.reduce((n, p) => n + p, 0)
+  const order = exact.map((e, i) => [e - Math.floor(e), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])
+  for (const [, i] of order) {
+    if (spare-- <= 0) break
+    parts[i] += 1
+  }
+  return parts
+}
+
+// lines: [{ unitPricePaise, qty, gstRate? }], coupon: a coupons row or null.
+// A coupon discount lowers each line's taxable value (so GST is charged on
+// the discounted price); the free-shipping threshold uses the discounted
+// subtotal.
+export function priceLines(lines, shippingMethod = 'standard', coupon = null) {
+  const gross = lines.map((l) => l.unitPricePaise * l.qty)
+  const subtotal = gross.reduce((n, g) => n + g, 0)
+  const discount = couponDiscount(coupon, subtotal)
+  const shares = allocate(discount, gross)
+  const priced = lines.map((l, i) => {
+    const taxable = gross[i] - shares[i]
     const rate = l.gstRate ?? DEFAULT_GST_RATE
-    return { ...l, taxablePaise: taxable, gstRate: rate, taxPaise: Math.round((taxable * rate) / 100) }
+    return { ...l, grossPaise: gross[i], discountPaise: shares[i], taxablePaise: taxable, gstRate: rate, taxPaise: Math.round((taxable * rate) / 100) }
   })
-  const subtotal = priced.reduce((n, l) => n + l.taxablePaise, 0)
   const tax = priced.reduce((n, l) => n + l.taxPaise, 0)
+  const net = subtotal - discount
   let shipping = SHIPPING_FEES_PAISE[shippingMethod] ?? SHIPPING_FEES_PAISE.standard
-  if ((shippingMethod === 'standard' && subtotal >= FREE_SHIPPING_MIN_PAISE) || subtotal === 0) shipping = 0
-  return { lines: priced, subtotal, shipping, tax, total: subtotal + shipping + tax }
+  if ((shippingMethod === 'standard' && net >= FREE_SHIPPING_MIN_PAISE) || subtotal === 0 || coupon?.kind === 'free_shipping') shipping = 0
+  return { lines: priced, subtotal, discount, shipping, tax, total: net + shipping + tax }
 }
 
 // Single-rate shortcut (all lines at the default rate)

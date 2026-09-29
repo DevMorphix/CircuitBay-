@@ -23,12 +23,16 @@ export function renderInvoice({ order: o, items, config, creditNote: cn = null }
   const intra = Boolean(supplyCode && sellerCode && supplyCode === sellerCode)
 
   const rows = items.map((i, n) => {
-    const taxable = i.unit_price_paise * i.qty
+    // A coupon discount lowers the line's taxable value
+    const disc = i.discount_paise ?? 0
+    const taxable = i.unit_price_paise * i.qty - disc
     const tax = i.tax_paise ?? Math.round((taxable * (i.gst_rate ?? 18)) / 100)
     const half = Math.floor(tax / 2)
-    return { n: n + 1, name: i.name, hsn: i.hsn_code, qty: i.qty, unit: i.unit_price_paise, taxable, rate: i.gst_rate ?? 18, tax, cgst: intra ? half : 0, sgst: intra ? tax - half : 0, igst: intra ? 0 : tax }
+    return { n: n + 1, name: i.name, hsn: i.hsn_code, qty: i.qty, unit: i.unit_price_paise, disc, taxable, rate: i.gst_rate ?? 18, tax, cgst: intra ? half : 0, sgst: intra ? tax - half : 0, igst: intra ? 0 : tax }
   })
   const sum = (k) => rows.reduce((n, r) => n + r[k], 0)
+  const hasDisc = rows.some((r) => r.disc > 0)
+  const span = 6 + (hasDisc ? 1 : 0) + (intra ? 2 : 1) // columns before "Amount"
 
   const taxCols = intra
     ? '<th class="num">CGST</th><th class="num">SGST</th>'
@@ -97,22 +101,23 @@ export function renderInvoice({ order: o, items, config, creditNote: cn = null }
   </section>
 
   <table>
-    <thead><tr><th>#</th><th>Item</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate (₹)</th><th class="num">Taxable (₹)</th>${taxCols}<th class="num">Amount (₹)</th></tr></thead>
+    <thead><tr><th>#</th><th>Item</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate (₹)</th>${hasDisc ? '<th class="num">Discount (₹)</th>' : ''}<th class="num">Taxable (₹)</th>${taxCols}<th class="num">Amount (₹)</th></tr></thead>
     <tbody>
       ${rows
         .map(
-          (r) => `<tr><td>${r.n}</td><td>${esc(r.name)}</td><td>${esc(r.hsn ?? '—')}</td><td class="num">${r.qty}</td><td class="num">${inr(r.unit)}</td><td class="num">${inr(r.taxable)}</td>${taxCells(r)}<td class="num">${inr(r.taxable + r.tax)}</td></tr>`,
+          (r) => `<tr><td>${r.n}</td><td>${esc(r.name)}</td><td>${esc(r.hsn ?? '—')}</td><td class="num">${r.qty}</td><td class="num">${inr(r.unit)}</td>${hasDisc ? `<td class="num">${inr(r.disc)}</td>` : ''}<td class="num">${inr(r.taxable)}</td>${taxCells(r)}<td class="num">${inr(r.taxable + r.tax)}</td></tr>`,
         )
         .join('\n      ')}
     </tbody>
     <tfoot>
-      <tr><td colspan="5">Total</td><td class="num">${inr(sum('taxable'))}</td>${intra ? `<td class="num">${inr(sum('cgst'))}</td><td class="num">${inr(sum('sgst'))}</td>` : `<td class="num">${inr(sum('igst'))}</td>`}<td class="num">${inr(sum('taxable') + sum('tax'))}</td></tr>
-      ${o.shipping_paise ? `<tr><td colspan="${intra ? 8 : 7}">Shipping (${esc(o.shipping_method)})</td><td class="num">${inr(o.shipping_paise)}</td></tr>` : ''}
-      <tr class="grand"><td colspan="${intra ? 8 : 7}">${cn ? 'Credit note total' : 'Invoice total'}</td><td class="num">₹${inr(cn ? cn.total_paise : o.total_paise)}</td></tr>
+      <tr><td colspan="5">Total</td>${hasDisc ? `<td class="num">${inr(sum('disc'))}</td>` : ''}<td class="num">${inr(sum('taxable'))}</td>${intra ? `<td class="num">${inr(sum('cgst'))}</td><td class="num">${inr(sum('sgst'))}</td>` : `<td class="num">${inr(sum('igst'))}</td>`}<td class="num">${inr(sum('taxable') + sum('tax'))}</td></tr>
+      ${o.shipping_paise ? `<tr><td colspan="${span}">Shipping (${esc(o.shipping_method)})</td><td class="num">${inr(o.shipping_paise)}</td></tr>` : ''}
+      <tr class="grand"><td colspan="${span}">${cn ? 'Credit note total' : 'Invoice total'}</td><td class="num">₹${inr(cn ? cn.total_paise : o.total_paise)}</td></tr>
     </tfoot>
   </table>
 
   <p class="words"><strong>Amount in words:</strong> ${esc(amountInWords(cn ? cn.total_paise : o.total_paise))}</p>
+  ${hasDisc && o.coupon_code ? `<p>Discount: coupon <strong>${esc(o.coupon_code)}</strong>, allowed on the invoice before tax.</p>` : ''}
   ${cn ? `<p><strong>Reason:</strong> ${esc(cn.reason)}. This credit note reverses the full value of invoice ${esc(cn.invoice_no)}, including the tax shown.</p>` : ''}
   <p class="note">Tax is not payable on reverse charge. This is a computer-generated ${cn ? 'credit note' : 'invoice'} and does not require a signature.</p>
 </main>

@@ -38,9 +38,9 @@ export function creditNoteStatements(orderId, reason, now = Date.now()) {
       params: [fy, orderId, orderId],
     },
     {
-      sql: `INSERT INTO credit_notes (number, order_id, invoice_no, reason, subtotal_paise, shipping_paise, tax_paise, total_paise, issued_at)
+      sql: `INSERT INTO credit_notes (number, order_id, invoice_no, reason, subtotal_paise, discount_paise, shipping_paise, tax_paise, total_paise, issued_at)
             SELECT (SELECT 'CN/' || fy || '/' || printf('%06d', last) FROM credit_note_counters WHERE fy = ?),
-                   id, invoice_no, ?, subtotal_paise, shipping_paise, tax_paise, total_paise, ?
+                   id, invoice_no, ?, subtotal_paise, discount_paise, shipping_paise, tax_paise, total_paise, ?
             FROM orders WHERE id = ? AND ${eligible}`,
       params: [fy, reason, now, orderId, orderId, orderId],
     },
@@ -103,6 +103,13 @@ async function placeLatePayment(svc, orderId, paymentId) {
               SELECT ?, 'placed', 'Payment received after the hold expired', ? WHERE ${stillCancelled}`,
         params: [orderId, now, orderId],
       },
+      // Take the coupon use back too — unless it's used up since, in which
+      // case the customer (who has paid) still keeps their discount
+      {
+        sql: `UPDATE coupons SET used_count = used_count + 1, updated_at = ?
+               WHERE code = (SELECT coupon_code FROM orders WHERE id = ?) AND (max_uses IS NULL OR used_count < max_uses) AND ${stillCancelled}`,
+        params: [now, orderId, orderId],
+      },
       {
         sql: `UPDATE orders SET status = 'placed', payment_id = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'cancelled' AND paid_at IS NULL`,
         params: [paymentId, now, now, orderId],
@@ -151,8 +158,9 @@ export async function markOrderPaymentFailed(svc, orderId, reason) {
   }
 }
 
-// Statements that cancel an order and return its reserved stock — but only
-// if it's still in one of `fromStatuses` (checked inside the transaction).
+// Statements that cancel an order and return its reserved stock and coupon
+// use — but only if it's still in one of `fromStatuses` (checked inside the
+// transaction).
 export function cancelAndRestockStatements(orderId, fromStatuses, note, now = Date.now()) {
   const list = fromStatuses.map((s) => `'${s}'`).join(', ')
   const guard = `EXISTS (SELECT 1 FROM orders WHERE id = ? AND status IN (${list}))`
@@ -165,6 +173,11 @@ export function cancelAndRestockStatements(orderId, fromStatuses, note, now = Da
       sql: `UPDATE products SET stock = stock + (SELECT qty FROM order_items oi WHERE oi.order_id = ? AND oi.product_id = products.id), updated_at = ?
              WHERE id IN (SELECT product_id FROM order_items WHERE order_id = ?) AND ${guard}`,
       params: [orderId, now, orderId, orderId],
+    },
+    {
+      sql: `UPDATE coupons SET used_count = MAX(used_count - 1, 0), updated_at = ?
+             WHERE code = (SELECT coupon_code FROM orders WHERE id = ?) AND ${guard}`,
+      params: [now, orderId, orderId],
     },
     {
       sql: `UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN (${list})`,
