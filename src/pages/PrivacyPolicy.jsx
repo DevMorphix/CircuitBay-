@@ -8,12 +8,24 @@ export function PrivacyPolicy() {
         counsel-reviewed copy before launch.
       </p>
       <p>
-        <strong>Information we collect:</strong> account details you provide, and basic
-        analytics events (page views, CTA clicks) once you accept cookies.
+        <strong>Information we collect:</strong> account details you provide (name, email,
+        mobile number, saved addresses), your orders, and messages you send through our forms.
+        Payments are handled by Razorpay — we never see or store card details.
       </p>
       <p>
-        <strong>Cookies &amp; analytics:</strong> we use GA4 (or similar) only after you accept
-        the cookie banner. See the Cookie Consent control in the site footer.
+        <strong>Service providers:</strong> we use Razorpay (payments), Cloudflare (hosting and
+        storage), an email provider (order and account emails) and an SMS provider (sign-in
+        codes). TODO_CLIENT: confirm the final list.
+      </p>
+      <p>
+        <strong>Cookies &amp; analytics:</strong> a session cookie keeps you signed in. We use
+        Google Analytics only after you accept the cookie banner, to understand how the site is
+        used (pages viewed, products viewed, items added to the cart, purchases).
+      </p>
+      <p>
+        <strong>Error monitoring:</strong> when something breaks, technical details about the
+        error (such as the page and browser) are sent to Sentry so we can fix it. We don&rsquo;t
+        send your name, email, payment details or the contents of forms.
       </p>
       <p>
         <strong>Third-party links:</strong> Shop and Community links may point to

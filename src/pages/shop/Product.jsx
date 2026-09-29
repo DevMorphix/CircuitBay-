@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell.jsx'
 import { Section } from '../../components/ui/Section.jsx'
@@ -11,7 +11,7 @@ import { formatPrice, getProduct, products, shopCategories } from '../../content
 import { projects } from '../../content/siteContent.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { trackEvent } from '../../lib/analytics.js'
+import { trackAddToCart, trackViewItem } from '../../lib/analytics.js'
 import { api } from '../../lib/api.js'
 import { useApi } from '../../lib/useApi.js'
 import { NotFound } from '../NotFound.jsx'
@@ -38,6 +38,8 @@ function ProductView({ product }) {
   const navigate = useNavigate()
   const category = shopCategories.find((c) => c.slug === product.category)
   const images = product.images ?? []
+
+  useEffect(() => trackViewItem(product), [product])
 
   // Live stock from the API's uncached /stock endpoint once hydrated (the
   // prerendered page shows the catalog value; checkout re-checks on the
@@ -66,7 +68,7 @@ function ProductView({ product }) {
 
   const addToCart = () => {
     add(product.id, qty)
-    trackEvent('add_to_cart', { item_id: product.id, quantity: qty })
+    trackAddToCart(product, qty)
     setAdded(true)
   }
 

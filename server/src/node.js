@@ -56,6 +56,10 @@ serve({ fetch: app.fetch, port }, () => {
 })
 
 // Housekeeping every 10 minutes (the Worker uses a cron trigger instead)
-const maintain = () => runMaintenance(db).catch((err) => console.error('maintenance failed', err))
+const maintain = () =>
+  runMaintenance(db).catch((err) => {
+    console.error('maintenance failed', err)
+    return services.reportError(err, { tags: { job: 'maintenance' } })
+  })
 maintain()
 setInterval(maintain, 10 * 60 * 1000).unref()

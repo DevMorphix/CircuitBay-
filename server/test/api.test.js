@@ -727,6 +727,78 @@ describe('refunds through the payment provider', () => {
   })
 })
 
+describe('error monitoring', () => {
+  const DSN = 'https://abc123@o1.ingest.sentry.io/42'
+
+  async function withFetchSpy(fn) {
+    const calls = []
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response('{}', { status: 200 })
+    }
+    try {
+      await fn(calls)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  }
+
+  it('reports unexpected errors to Sentry once, without query strings, and hides details from the visitor', async () => {
+    await withFetchSpy(async (calls) => {
+      const { app, svc } = setup({ SENTRY_DSN: DSN, RELEASE: 'abc123' })
+      svc.db.all = async () => {
+        throw new Error('D1 is down')
+      }
+      const res = await app.request('/api/categories?secret=1', { headers: { cookie: 'cb_session=xyz' } })
+      expect(res.status).toBe(500)
+      const body = await res.json()
+      expect(body.error.message).not.toContain('D1')
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0].url).toBe('https://o1.ingest.sentry.io/api/42/envelope/')
+      expect(calls[0].init.headers['X-Sentry-Auth']).toContain('sentry_key=abc123')
+      const [header, type, event] = calls[0].init.body.split('\n').map((l) => JSON.parse(l))
+      expect(header.dsn).toBe(DSN)
+      expect(type).toEqual({ type: 'event' })
+      expect(event.exception.values[0]).toMatchObject({ type: 'Error', value: 'D1 is down' })
+      expect(event.exception.values[0].stacktrace.frames.length).toBeGreaterThan(0)
+      expect(event.request).toEqual({ method: 'GET', url: 'http://localhost/api/categories' })
+      expect(event.release).toBe('abc123')
+      expect(calls[0].init.body).not.toContain('xyz')
+
+      // The same error again within a minute isn't re-sent
+      await app.request('/api/categories?x=2')
+      await new Promise((r) => setTimeout(r, 10))
+      expect(calls).toHaveLength(1)
+    })
+  })
+
+  it('sends nothing without a DSN, and never for expected errors (4xx)', async () => {
+    await withFetchSpy(async (calls) => {
+      const { app, svc } = setup()
+      svc.db.all = async () => {
+        throw new Error('boom')
+      }
+      expect((await app.request('/api/categories')).status).toBe(500)
+      const withDsn = setup({ SENTRY_DSN: DSN })
+      expect((await withDsn.app.request('/api/products/nope')).status).toBe(404)
+      await new Promise((r) => setTimeout(r, 10))
+      expect(calls).toHaveLength(0)
+    })
+  })
+
+  it('parses V8 stack traces into Sentry frames, oldest first', async () => {
+    const { parseStack } = await import('../src/lib/monitoring.js')
+    const frames = parseStack('Error: x\n    at inner (file:///app/src/a.js:10:5)\n    at outer (file:///app/node_modules/hono/b.js:20:7)')
+    expect(frames).toEqual([
+      { function: 'outer', filename: 'file:///app/node_modules/hono/b.js', lineno: 20, colno: 7, in_app: false },
+      { function: 'inner', filename: 'file:///app/src/a.js', lineno: 10, colno: 5, in_app: true },
+    ])
+  })
+})
+
 describe('site publishing', () => {
   it('calls the deploy hook when configured', async () => {
     const calls = []

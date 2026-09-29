@@ -8,6 +8,7 @@ import { loadUser } from './middleware/auth.js'
 import { createEmailService } from './services/email.js'
 import { createSmsService } from './services/sms.js'
 import { createPaymentProvider } from './services/payments.js'
+import { createErrorReporter } from './lib/monitoring.js'
 import { auth } from './routes/auth.js'
 import { catalog } from './routes/catalog.js'
 import { content } from './routes/content.js'
@@ -32,6 +33,7 @@ export function buildServices({ config, db, storage, cache = createMemoryCache()
     email: createEmailService(config, { log }),
     sms: createSmsService(config, { log }),
     payments: createPaymentProvider(config),
+    reportError: createErrorReporter(config),
   }
 }
 
@@ -130,6 +132,13 @@ export function createApp(getServices) {
       return c.json({ error: { code: 'bad_request', message: err.message || 'Bad request.' } }, err.status)
     }
     console.error(err)
+    // Report unexpected errors; on Workers keep the request alive until sent
+    const sent = c.var.svc?.reportError(err, { method: c.req.method, url: c.req.url })
+    try {
+      c.executionCtx.waitUntil(sent)
+    } catch {
+      // Node has no execution context — the report finishes on its own
+    }
     return c.json({ error: { code: 'internal', message: 'Something went wrong on our side. Please try again.' } }, 500)
   })
 

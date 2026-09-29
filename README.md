@@ -40,6 +40,8 @@ build fails if any page breaks the SEO checks.
   - `CONTENT_API_URL`: the same URL. The build pulls the live catalog
     (products, articles, projects) from it before prerendering, so the pages
     match what the team edits in `/admin`.
+  - `VITE_GA_MEASUREMENT_ID` / `VITE_SENTRY_DSN`: Google Analytics and Sentry
+    (optional; empty = off)
 
   Create a **deploy hook** for the Pages project and set it as the API secret
   `SITE_DEPLOY_HOOK_URL`. The admin "Publish site changes" button uses it.
@@ -105,7 +107,7 @@ placeholder that needs real client input.
 - [x] GST tax invoices for every order (sequential per financial year, CGST+SGST / IGST by place of supply, per-product HSN + rate, printable, for customers and admins)
 - [x] GST credit notes when an invoiced order is cancelled (automatic, own CN/ sequence, printable for customers and admins)
 - [x] Refunds sent from admin through Razorpay's API (one click, can't double-refund, customer emailed; failed refunds reopen via webhook)
-- [ ] Error monitoring (Sentry) + analytics ID
+- [x] Error monitoring (Sentry for the site and API; friendly error screen) + analytics (GA4 e-commerce events, after consent)
 - [ ] Email polish: HTML templates, email verification, unsubscribe page, newsletter sync
 - [ ] Coupons (the coupon box is on screen but not connected)
 - [ ] Reviews from verified buyers (so ratings can be shown honestly)
@@ -130,7 +132,8 @@ placeholder that needs real client input.
 - [ ] Razorpay: KYC, test keys (verify the real payment window), live keys, webhook
 - [ ] Resend: verify the sending domain
 - [ ] MSG91: DLT registration, sender ID, OTP template
-- [ ] Google: Search Console + sitemap, Analytics (GA4), Business Profile
+- [ ] Google: Search Console + sitemap, Analytics (GA4 ID → `VITE_GA_MEASUREMENT_ID`), Business Profile
+- [ ] Sentry: create a project; set `VITE_SENTRY_DSN` (site) and `SENTRY_DSN` (API secret), and add alert rules
 - [ ] Admin emails and secret keys configured in Cloudflare
 
 ### After launch

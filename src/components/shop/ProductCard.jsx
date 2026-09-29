@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { formatPrice } from '../../content/shopData.js'
 import { useCart } from '../../context/CartContext.jsx'
-import { trackEvent } from '../../lib/analytics.js'
+import { trackAddToCart } from '../../lib/analytics.js'
 import { Photo } from '../ui/Card.jsx'
 import { Icon } from '../ui/Icon.jsx'
 
@@ -44,7 +44,7 @@ export function AddToCartButton({ product, className = '', label = 'Add to cart'
       type="button"
       onClick={() => {
         add(product.id)
-        trackEvent('add_to_cart', { item_id: product.id, price: product.price })
+        trackAddToCart(product)
       }}
       className={`inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-brand-700 hover:shadow-[0_0_20px_rgba(63,125,222,0.4)] ${className}`}
     >

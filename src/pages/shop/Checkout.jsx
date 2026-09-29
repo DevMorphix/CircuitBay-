@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell.jsx'
 import { PageHero, Section } from '../../components/ui/Section.jsx'
@@ -11,7 +11,7 @@ import { useCart } from '../../context/CartContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { api, fieldErrors } from '../../lib/api.js'
 import { payWithRazorpay } from '../../lib/razorpay.js'
-import { trackEvent } from '../../lib/analytics.js'
+import { trackBeginCheckout, trackPurchase } from '../../lib/analytics.js'
 
 const STEPS = ['Contact & address', 'Shipping', 'Payment']
 // Keep in sync with server/src/lib/money.js (the server's totals are final)
@@ -43,6 +43,14 @@ export function Checkout() {
   const [error, setError] = useState(null) // { message, items?: [], fields?: {} }
   const [pending, setPending] = useState(null) // server order awaiting payment (for retries)
   const [done, setDone] = useState(false)
+
+  // Once per visit to checkout (not on every re-render)
+  const checkoutTracked = useRef(false)
+  useEffect(() => {
+    if (checkoutTracked.current || items.length === 0) return
+    checkoutTracked.current = true
+    trackBeginCheckout(items, subtotal)
+  }, [items, subtotal])
 
   if (items.length === 0 && !done) return <Navigate to="/shop/cart" replace />
 
@@ -78,7 +86,7 @@ export function Checkout() {
             { razorpay_order_id: order.payment.orderId, razorpay_payment_id: `pay_dev_${Date.now()}`, razorpay_signature: 'fake-ok' }
           : await payWithRazorpay(order.payment)
       const verified = await api.post('/checkout/verify', { orderId: order.orderId, ...result })
-      trackEvent('purchase', { transaction_id: order.orderId, value: order.totals.total, currency: 'INR' })
+      trackPurchase(order.orderId, order.totals, items)
       setDone(true)
       clear()
       navigate(`/shop/order/${order.orderId}`, { state: { order: verified.order } })

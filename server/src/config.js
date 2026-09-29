@@ -25,6 +25,10 @@ const schema = z
     // catalog from this API) when an admin clicks 'Publish site changes'
     SITE_DEPLOY_HOOK_URL: z.string().url().optional(),
 
+    // Error monitoring (optional): Sentry project DSN and a release tag
+    SENTRY_DSN: z.string().url().optional(),
+    RELEASE: z.string().max(64).optional(),
+
     // Seller details printed on GST tax invoices.
     // TODO_CLIENT: legal name, GSTIN, registered address and its state code.
     BUSINESS_LEGAL_NAME: z.string().default('CircuitBay'),

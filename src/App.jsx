@@ -4,6 +4,7 @@ import { CartProvider } from './context/CartContext.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { CookieConsent } from './components/layout/CookieConsent.jsx'
 import { ScrollToTop } from './components/layout/ScrollToTop.jsx'
+import { ErrorBoundary } from './components/layout/ErrorBoundary.jsx'
 import { Home } from './pages/Home.jsx'
 
 // Home ships in the main bundle (it's the landing page); every other page
@@ -53,43 +54,45 @@ export default function App() {
         <a href="#main" className="skip-link">
           Skip to content
         </a>
-        <Suspense fallback={<PageLoading />}>
-          <Routes>
-            <Route path="/" element={<Home />} />
+        <ErrorBoundary>
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
+              <Route path="/" element={<Home />} />
 
-            <Route path="/blog" element={<BlogHome />} />
-            <Route path="/blog/:slug" element={<Article />} />
+              <Route path="/blog" element={<BlogHome />} />
+              <Route path="/blog/:slug" element={<Article />} />
 
-            <Route path="/shop" element={<ShopHome />} />
-            <Route path="/shop/category/:slug" element={<Category />} />
-            <Route path="/shop/product/:id" element={<Product />} />
-            <Route path="/shop/cart" element={<Cart />} />
-            <Route path="/shop/checkout" element={<Checkout />} />
-            <Route path="/shop/order/:id" element={<OrderConfirmation />} />
-            <Route path="/shop/track" element={<Track />} />
-            <Route path="/account" element={<Account />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/admin/*" element={<AdminApp />} />
-            <Route path="/faq" element={<Faq />} />
+              <Route path="/shop" element={<ShopHome />} />
+              <Route path="/shop/category/:slug" element={<Category />} />
+              <Route path="/shop/product/:id" element={<Product />} />
+              <Route path="/shop/cart" element={<Cart />} />
+              <Route path="/shop/checkout" element={<Checkout />} />
+              <Route path="/shop/order/:id" element={<OrderConfirmation />} />
+              <Route path="/shop/track" element={<Track />} />
+              <Route path="/account" element={<Account />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/admin/*" element={<AdminApp />} />
+              <Route path="/faq" element={<Faq />} />
 
-            <Route path="/about" element={<About />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/schools" element={<Schools />} />
-            <Route path="/final-year-projects" element={<FinalYearProjects />} />
-            <Route path="/request-a-part" element={<RequestPart />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/schools" element={<Schools />} />
+              <Route path="/final-year-projects" element={<FinalYearProjects />} />
+              <Route path="/request-a-part" element={<RequestPart />} />
 
-            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="/terms" element={<Terms />} />
-            <Route path="/refund-policy" element={<RefundPolicy />} />
-            <Route path="/shipping-policy" element={<ShippingPolicy />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/refund-policy" element={<RefundPolicy />} />
+              <Route path="/shipping-policy" element={<ShippingPolicy />} />
 
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+        </ErrorBoundary>
           <CookieConsent />
       </CartProvider>
     </AuthProvider>
