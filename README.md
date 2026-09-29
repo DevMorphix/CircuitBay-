@@ -81,7 +81,7 @@ the API checks the role on every request).
 | Screen | What it does |
 |---|---|
 | Dashboard | 30-day sales, orders to fulfil, refunds needed, low stock, inbox counts |
-| Orders | Search/filter; move orders placed → confirmed → packed → shipped (courier + tracking no.) → delivered, with customer emails; cancel (stock returns); record Razorpay refunds |
+| Orders | Search/filter; move orders placed → confirmed → packed → shipped (courier + tracking no.) → delivered, with customer emails; cancel (stock returns); refund through Razorpay in one click; GST invoice |
 | Products | Create/edit (photos, datasheet PDF, specs, badges, kit contents), quick stock edits, hide from shop |
 | Inbox | Contact messages and part requests, workshop requests (new → contacted → scheduled → closed), newsletter list + CSV export |
 | Projects | Review community submissions, edit, add a photo, publish/feature/reject |
@@ -104,7 +104,7 @@ placeholder that needs real client input.
 - [x] Build product, blog and project pages from the API catalog (so admin edits reach the site) + "Publish site changes" button
 - [x] GST tax invoices for every order (sequential per financial year, CGST+SGST / IGST by place of supply, per-product HSN + rate, printable, for customers and admins)
 - [ ] GST credit notes when an invoiced order is cancelled or refunded
-- [ ] Refunds sent from admin through Razorpay's API (today: refund in the Razorpay dashboard, then record it in admin)
+- [x] Refunds sent from admin through Razorpay's API (one click, can't double-refund, customer emailed; failed refunds reopen via webhook)
 - [ ] Error monitoring (Sentry) + analytics ID
 - [ ] Email polish: HTML templates, email verification, unsubscribe page, newsletter sync
 - [ ] Coupons (the coupon box is on screen but not connected)

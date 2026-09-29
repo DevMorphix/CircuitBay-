@@ -242,11 +242,52 @@ admin.post('/orders/:id/refunded', body(z.object({ note: z.string().trim().max(3
   if (o.refunded_at) throw conflict('This order is already marked refunded.')
   const now = Date.now()
   const note = c.req.valid('json').note
-  await db.batch([
-    { sql: 'UPDATE orders SET refunded_at = ?, refund_note = ?, updated_at = ? WHERE id = ?', params: [now, note, now, c.req.param('id')] },
-    { sql: "INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'refunded', ?, ?)", params: [c.req.param('id'), note ?? 'Refund issued', now] },
-  ])
+  // Conditional update so two admins can't both record it
+  const res = await db.run('UPDATE orders SET refunded_at = ?, refund_note = ?, updated_at = ? WHERE id = ? AND refunded_at IS NULL', [now, note, now, c.req.param('id')])
+  if (!res.changes) throw conflict('This order is already marked refunded.')
+  await db.run("INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'refunded', ?, ?)", [c.req.param('id'), note ?? 'Refund recorded', now])
   return c.json({ ok: true })
+})
+
+// Refund the full amount through the payment provider (Razorpay Refunds
+// API). The order is claimed first with a conditional update, so a double
+// click or two admins can never send two refunds; if the provider rejects
+// it, the claim is released and it can be retried.
+admin.post('/orders/:id/refund', limitByIp('refund', { limit: 30, windowSec: 3600 }), body(z.object({ reason: z.string().trim().max(200).optional() })), async (c) => {
+  const { db, payments, email, config } = c.var.svc
+  const id = c.req.param('id')
+  const { reason } = c.req.valid('json')
+  const o = await db.first('SELECT * FROM orders WHERE id = ?', [id])
+  if (!o) throw notFound('Order not found.')
+  if (o.status !== 'cancelled' || !o.paid_at) throw badRequest('Cancel the order first — only cancelled, paid orders can be refunded.')
+  if (!o.payment_id) throw badRequest('This order has no payment ID to refund. Refund it in the Razorpay dashboard and record it here.')
+
+  const claimedAt = Date.now()
+  const claim = await db.run(
+    "UPDATE orders SET refunded_at = ?, refund_note = 'processing', updated_at = ? WHERE id = ? AND refunded_at IS NULL",
+    [claimedAt, claimedAt, id],
+  )
+  if (!claim.changes) throw conflict('This order has already been refunded (or a refund is in progress).')
+
+  let refund
+  try {
+    refund = await payments.refund({ paymentId: o.payment_id, amountPaise: o.total_paise, notes: { orderId: id, reason: reason ?? 'Order cancelled' } })
+  } catch (err) {
+    await db.run("UPDATE orders SET refunded_at = NULL, refund_note = NULL WHERE id = ? AND refund_note = 'processing'", [id])
+    throw new HttpError(502, 'refund_failed', `Razorpay didn't accept the refund: ${err.message}`)
+  }
+
+  const now = Date.now()
+  await db.batch([
+    { sql: 'UPDATE orders SET refund_note = ?, updated_at = ? WHERE id = ?', params: [refund.id, now, id] },
+    { sql: "INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'refunded', ?, ?)", params: [id, `Refund ${refund.id} (${refund.status})`, now] },
+  ])
+  try {
+    await email.send({ to: o.contact_email, ...emails.refundIssued(config.SITE_URL, o) })
+  } catch (err) {
+    console.error('refund email failed', id, err)
+  }
+  return c.json({ ok: true, refundId: refund.id, status: refund.status })
 })
 
 // ------------------------------------------------------ publish the site --

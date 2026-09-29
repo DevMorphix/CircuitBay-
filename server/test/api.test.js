@@ -606,6 +606,93 @@ describe('GST invoices', () => {
   })
 })
 
+describe('refunds through the payment provider', () => {
+  const insertCancelledPaid = (db, id, paymentId = 'pay_R1') => {
+    const now = Date.now()
+    return db.run(
+      `INSERT INTO orders (id, status, contact_name, contact_email, contact_phone, ship_line1, ship_city, ship_state, ship_pin,
+         shipping_method, subtotal_paise, shipping_paise, tax_paise, total_paise, payment_provider, payment_order_id, payment_id, paid_at, created_at, updated_at)
+       VALUES (?, 'cancelled', 'R', 'r@example.com', '+919876543210', 'x', 'Kochi', 'Kerala', '682001', 'standard', 10000, 7900, 1800, 19700, 'razorpay', ?, ?, ?, ?, ?)`,
+      [id, `order_${id}`, paymentId, now, now, now],
+    )
+  }
+  const adminFor = async (app) => {
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    return admin
+  }
+
+  it('refunds a cancelled order once, emails the customer, and clears "refunds needed"', async () => {
+    const { app, db, svc } = setup()
+    await insertCancelledPaid(db, 'CBREFUND01')
+    const admin = await adminFor(app)
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBe(1)
+
+    const res = await admin.post('/api/admin/orders/CBREFUND01/refund', { reason: 'Customer changed mind' })
+    expect(res.status).toBe(200)
+    expect(res.body.refundId).toMatch(/^rfnd_fake_/)
+    expect(svc.email.sent.at(-1)).toMatchObject({ to: 'r@example.com', subject: 'Refund for order CBREFUND01' })
+    expect((await admin.post('/api/admin/orders/CBREFUND01/refund', {})).status).toBe(409)
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBe(0)
+    const detail = (await admin.get('/api/admin/orders/CBREFUND01')).body.order
+    expect(detail.refundNote).toBe(res.body.refundId)
+  })
+
+  it('refuses to refund an order that is not cancelled', async () => {
+    const { app } = setup()
+    const admin = await adminFor(app)
+    const co = await admin.post('/api/checkout', checkoutBody())
+    await admin.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: 'pay_live1', razorpay_signature: 'fake-ok' })
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refund`, {})).status).toBe(400)
+  })
+
+  it('calls Razorpay with the full amount, and releases the claim if Razorpay rejects it', async () => {
+    const env = { APP_ENV: 'test', PAYMENTS_PROVIDER: 'razorpay', RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 'key_secret', RAZORPAY_WEBHOOK_SECRET: 'hook_secret' }
+    const { app, db } = setup(env)
+    await insertCancelledPaid(db, 'CBREFUND02', 'pay_ABC')
+    const admin = await adminFor(app)
+    const calls = []
+    const realFetch = globalThis.fetch
+    let fail = true
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), body: JSON.parse(init.body), auth: init.headers.Authorization })
+      return fail
+        ? new Response(JSON.stringify({ error: { description: 'The balance is insufficient' } }), { status: 400 })
+        : new Response(JSON.stringify({ id: 'rfnd_REAL1', status: 'processed' }), { status: 200 })
+    }
+    try {
+      const rejected = await admin.post('/api/admin/orders/CBREFUND02/refund', {})
+      expect(rejected.status).toBe(502)
+      expect(rejected.body.error.message).toContain('The balance is insufficient')
+      expect((await db.first(`SELECT refunded_at FROM orders WHERE id = 'CBREFUND02'`)).refunded_at).toBeNull()
+
+      fail = false
+      const ok = await admin.post('/api/admin/orders/CBREFUND02/refund', {})
+      expect(ok.body.refundId).toBe('rfnd_REAL1')
+      expect(calls[1]).toMatchObject({ url: 'https://api.razorpay.com/v1/payments/pay_ABC/refund', body: { amount: 19700, speed: 'normal' } })
+      expect(calls[1].auth).toBe(`Basic ${btoa('rzp_test_x:key_secret')}`)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('reopens "refunds needed" when Razorpay reports a refund failed', async () => {
+    const env = { APP_ENV: 'test', PAYMENTS_PROVIDER: 'razorpay', RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 'key_secret', RAZORPAY_WEBHOOK_SECRET: 'hook_secret' }
+    const { app, db } = setup(env)
+    await insertCancelledPaid(db, 'CBREFUND03', 'pay_XYZ')
+    await db.run(`UPDATE orders SET refunded_at = ?, refund_note = 'rfnd_X' WHERE id = 'CBREFUND03'`, [Date.now()])
+    const raw = JSON.stringify({ event: 'refund.failed', payload: { refund: { entity: { id: 'rfnd_X', payment_id: 'pay_XYZ', amount: 19700 } } } })
+    const res = await app.request('/api/webhooks/razorpay', {
+      method: 'POST',
+      body: raw,
+      headers: { 'content-type': 'application/json', 'x-razorpay-signature': await hmacSha256Hex('hook_secret', raw), 'x-razorpay-event-id': 'evt_rf1' },
+    })
+    expect(res.status).toBe(200)
+    const o = await db.first(`SELECT refunded_at, refund_note FROM orders WHERE id = 'CBREFUND03'`)
+    expect(o).toMatchObject({ refunded_at: null, refund_note: 'failed: rfnd_X' })
+  })
+})
+
 describe('site publishing', () => {
   it('calls the deploy hook when configured', async () => {
     const calls = []

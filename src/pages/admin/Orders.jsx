@@ -268,22 +268,24 @@ function StatusForm({ order, onDone }) {
 function RefundPanel({ order, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [manual, setManual] = useState(false)
+
   if (order.refundedAt) {
     return (
       <Panel title="Refund">
         <p className="text-sm text-ink-600">
-          Refunded {dateTime(order.refundedAt)}
-          {order.refundNote ? ` · ${order.refundNote}` : ''}
+          {order.refundNote === 'processing' ? 'Refund in progress…' : `Refunded ${dateTime(order.refundedAt)}`}
+          {order.refundNote && order.refundNote !== 'processing' ? ` · ${order.refundNote}` : ''}
         </p>
       </Panel>
     )
   }
-  const submit = async (e) => {
-    e.preventDefault()
-    const note = new FormData(e.currentTarget).get('note') || undefined
+
+  const run = async (fn) => {
     setBusy(true)
+    setError('')
     try {
-      await api.post(`/admin/orders/${order.id}/refunded`, { note })
+      await fn()
       onDone()
     } catch (err) {
       setError(err.message)
@@ -291,20 +293,46 @@ function RefundPanel({ order, onDone }) {
       setBusy(false)
     }
   }
+  const refundNow = () => {
+    if (!window.confirm(`Refund ${rupees(order.totals.total)} to ${order.contact.name} through Razorpay? This can't be undone.`)) return
+    run(() => api.post(`/admin/orders/${order.id}/refund`, {}))
+  }
+  const record = (e) => {
+    e.preventDefault()
+    const note = new FormData(e.currentTarget).get('note') || undefined
+    run(() => api.post(`/admin/orders/${order.id}/refunded`, { note }))
+  }
+
   return (
     <Panel title="Refund needed">
-      <form onSubmit={submit} className="grid gap-3">
+      <div className="grid gap-3">
+        {order.refundNote?.startsWith('failed') && (
+          <p role="alert" className="rounded-lg bg-surface-soft p-3 text-sm font-medium text-navy-800">
+            The last refund attempt failed ({order.refundNote.replace('failed: ', '')}). Try again, or contact the customer.
+          </p>
+        )}
         <p className="text-sm text-ink-600">
-          1. Refund {rupees(order.totals.total)} for payment <span className="font-semibold text-ink-900">{order.paymentId}</span> in the Razorpay dashboard.
-          <br />
-          2. Record it here.
+          Returns {rupees(order.totals.total)} to the customer's original payment method (payment{' '}
+          <span className="font-semibold text-ink-900">{order.paymentId ?? '—'}</span>). They get an email; it usually arrives in 5–7 working days.
         </p>
-        <Field label="Razorpay refund ID (optional)" id="rf-note" name="note" placeholder="rfnd_…" />
         {error && <p role="alert" className="text-sm font-medium text-navy-800">{error}</p>}
-        <button type="submit" disabled={busy} className={btn.primary}>
-          {busy ? 'Saving…' : 'Mark as refunded'}
+        <button type="button" disabled={busy || !order.paymentId} onClick={refundNow} className={btn.primary}>
+          {busy ? 'Refunding…' : `Refund ${rupees(order.totals.total)} to customer`}
         </button>
-      </form>
+
+        {!manual ? (
+          <button type="button" className={btn.link} onClick={() => setManual(true)}>
+            Already refunded another way? Record it
+          </button>
+        ) : (
+          <form onSubmit={record} className="grid gap-3 border-t border-black/5 pt-3">
+            <Field label="Refund reference (optional)" id="rf-note" name="note" placeholder="rfnd_… or bank reference" />
+            <button type="submit" disabled={busy} className={btn.secondary}>
+              {busy ? 'Saving…' : 'Mark as refunded'}
+            </button>
+          </form>
+        )}
+      </div>
     </Panel>
   )
 }

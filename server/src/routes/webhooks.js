@@ -22,8 +22,14 @@ webhooks.post('/razorpay', async (c) => {
   }
   const eventId = c.req.header('x-razorpay-event-id') ?? `${event.event}:${event.payload?.payment?.entity?.id ?? event.created_at}`
   const payment = event.payload?.payment?.entity
+  const refund = event.payload?.refund?.entity
   const providerOrderId = payment?.order_id ?? event.payload?.order?.entity?.id
-  const order = providerOrderId ? await svc.db.first('SELECT * FROM orders WHERE payment_order_id = ?', [providerOrderId]) : null
+  // Refund events identify the order through the refunded payment
+  const order = providerOrderId
+    ? await svc.db.first('SELECT * FROM orders WHERE payment_order_id = ?', [providerOrderId])
+    : refund?.payment_id
+      ? await svc.db.first('SELECT * FROM orders WHERE payment_id = ?', [refund.payment_id])
+      : null
 
   const inserted = await svc.db.run(
     'INSERT INTO payment_events (id, provider, type, order_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
@@ -46,6 +52,22 @@ webhooks.post('/razorpay', async (c) => {
     case 'payment.failed':
       await markOrderPaymentFailed(svc, order.id, payment?.error_description ?? 'Payment failed')
       break
+    case 'refund.processed':
+      await svc.db.run("INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'refund_processed', ?, ?)", [
+        order.id,
+        `Refund ${refund?.id ?? ''} completed by Razorpay`,
+        Date.now(),
+      ])
+      break
+    case 'refund.failed': {
+      // Put the order back into "refunds needed" so the team follows up
+      const now = Date.now()
+      await svc.db.batch([
+        { sql: 'UPDATE orders SET refunded_at = NULL, refund_note = ?, updated_at = ? WHERE id = ?', params: [`failed: ${refund?.id ?? 'refund'}`, now, order.id] },
+        { sql: "INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'refund_failed', ?, ?)", params: [order.id, `Refund ${refund?.id ?? ''} failed — refund again or contact the customer`, now] },
+      ])
+      break
+    }
   }
   return c.json({ ok: true })
 })
