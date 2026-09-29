@@ -161,6 +161,8 @@ function ProductForm({ product, categories }) {
       images,
       datasheetKey,
       active: d.active === 'on',
+      hsnCode: d.hsnCode || null,
+      gstRate: Number(d.gstRate),
     }
     setBusy(true)
     setSaved(false)
@@ -211,8 +213,16 @@ function ProductForm({ product, categories }) {
                 ))}
               </select>
             </Field>
-            <Field label="Price (₹, incl. GST display)" id="p-price" name="price" type="number" min="0" step="0.01" required defaultValue={product?.price} error={fe.price} />
+            <Field label="Price (₹, before GST)" id="p-price" name="price" type="number" min="0" step="0.01" required defaultValue={product?.price} error={fe.price} />
             <Field label="Stock" id="p-stock" name="stock" type="number" min="0" step="1" required defaultValue={product?.stock ?? 0} error={fe.stock} />
+            <Field label="HSN code" id="p-hsn" name="hsnCode" inputMode="numeric" pattern="\d{4,8}" defaultValue={product?.hsnCode ?? ''} hint="Printed on GST invoices (4–8 digits)." error={fe.hsnCode} />
+            <Field label="GST rate" id="p-gst">
+              <select id="p-gst" name="gstRate" className="field" defaultValue={String(product?.gstRate ?? 18)}>
+                {[0, 5, 12, 18, 28].map((r) => (
+                  <option key={r} value={r}>{r}%</option>
+                ))}
+              </select>
+            </Field>
             <Field label="Brand" id="p-brand" name="brand" defaultValue={product?.brand ?? ''} />
             <Field label="Type" id="p-type" name="type" defaultValue={product?.type ?? ''} placeholder="Sensor, Microcontroller, Kit…" />
             <label className="flex items-center gap-2 text-sm text-ink-900">

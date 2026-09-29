@@ -7,6 +7,7 @@ import { ArrowLink } from '../../components/ui/Card.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { api } from '../../lib/api.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { InvoiceButton } from '../../components/shop/InvoiceButton.jsx'
 
 const LABELS = {
   placed: 'Placed',
@@ -75,6 +76,11 @@ export function Track() {
           <div className="card p-6 sm:p-8">
             <p className="text-sm text-ink-400">Order</p>
             <p className="font-heading text-2xl font-semibold text-ink-900">#{order.id}</p>
+            {order.invoiceNo && (
+              <div className="mt-3">
+                <InvoiceButton path="/orders/invoice" body={{ orderId: order.id, contact }} label={`GST invoice ${order.invoiceNo}`} />
+              </div>
+            )}
             {order.trackingNumber && (
               <p className="mt-2 text-sm text-ink-600">
                 {order.courier ?? 'Courier'} tracking number: <span className="font-semibold text-ink-900">{order.trackingNumber}</span>

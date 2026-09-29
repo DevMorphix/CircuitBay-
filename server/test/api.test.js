@@ -211,7 +211,7 @@ describe('Razorpay signatures + webhook', () => {
          'standard', 44900, 7900, 8082, 60882, 'razorpay', 'order_WH1', ?, ?)`,
       [now, now],
     )
-    await db.run(`INSERT INTO order_items VALUES ('CBTEST0001', 'esp32-devkit', 'ESP32 DevKit V1', 44900, 1)`)
+    await db.run(`INSERT INTO order_items (order_id, product_id, name, unit_price_paise, qty) VALUES ('CBTEST0001', 'esp32-devkit', 'ESP32 DevKit V1', 44900, 1)`)
 
     const send = async (payload, eventId) => {
       const raw = JSON.stringify(payload)
@@ -520,6 +520,89 @@ describe('stock under concurrency', () => {
     const res = await client(app).post('/api/checkout', checkoutBody([{ productId: 'line-follower-kit', qty: 2 }]))
     expect(res.status).toBe(502)
     expect((await db.first(`SELECT stock FROM products WHERE id = 'line-follower-kit'`)).stock).toBe(4)
+  })
+})
+
+describe('GST invoices', () => {
+  const SELLER = { BUSINESS_GSTIN: '32ABCDE1234F1Z5', BUSINESS_STATE_CODE: '32', BUSINESS_LEGAL_NAME: 'CircuitBay Test Pvt Ltd' }
+  const pay = (api, co) =>
+    api.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: `pay_${co.body.orderId}`, razorpay_signature: 'fake-ok' })
+  const html = async (res) => (typeof res.body === 'string' ? res.body : JSON.stringify(res.body))
+
+  it('formats amounts in words and financial years the Indian way', async () => {
+    const { amountInWords, financialYear } = await import('../src/lib/money.js')
+    expect(amountInWords(12345678_50)).toBe('Rupees One Crore Twenty-Three Lakh Forty-Five Thousand Six Hundred Seventy-Eight and Paise Fifty Only')
+    expect(amountInWords(100)).toBe('Rupees One Only')
+    expect(financialYear(Date.parse('2026-03-31T12:00:00+05:30'))).toBe('25-26')
+    expect(financialYear(Date.parse('2026-04-01T00:30:00+05:30'))).toBe('26-27')
+  })
+
+  it('issues sequential invoice numbers on payment, with CGST+SGST for same-state delivery', async () => {
+    const { app, db } = setup(SELLER)
+    const api = client(app)
+    const first = await api.post('/api/checkout', checkoutBody()) // Kerala → same state as the seller
+    expect((await api.post('/api/orders/invoice', { orderId: first.body.orderId, contact: 'buyer@example.com' })).status).toBe(404) // not paid yet
+    await pay(api, first)
+    const second = await api.post('/api/checkout', { ...checkoutBody(), address: { ...checkoutBody().address, state: 'Karnataka' } })
+    await pay(api, second)
+
+    const nos = await db.all('SELECT id, invoice_no, place_of_supply FROM orders ORDER BY invoiced_at, invoice_no')
+    const fy = (await import('../src/lib/money.js')).financialYear()
+    expect(nos.map((o) => o.invoice_no)).toEqual([`CB/${fy}/000001`, `CB/${fy}/000002`])
+    expect(nos.map((o) => o.place_of_supply)).toEqual(['32', '29'])
+    expect(nos[0].invoice_no.length).toBeLessThanOrEqual(16)
+
+    const intra = await html(await api.post('/api/orders/invoice', { orderId: first.body.orderId, contact: '98765 43210' }))
+    expect(intra).toContain('Tax Invoice')
+    expect(intra).toContain('32ABCDE1234F1Z5')
+    expect(intra).toContain('CGST')
+    expect(intra).not.toContain('>IGST<')
+    expect(intra).toContain('Place of supply: <strong>Kerala (32)</strong>')
+
+    const inter = await html(await api.post('/api/orders/invoice', { orderId: second.body.orderId, contact: 'buyer@example.com' }))
+    expect(inter).toContain('>IGST<')
+    expect(inter).toContain('Karnataka (29)')
+    // Pay once more for the same order: no second number is consumed
+    await pay(api, first)
+    expect((await db.first('SELECT last FROM invoice_counters')).last).toBe(2)
+  })
+
+  it('charges GST per product rate and prints matching totals', async () => {
+    const { app, db } = setup(SELLER)
+    await db.run(`UPDATE products SET gst_rate = 5, hsn_code = '85437099' WHERE id = 'hc-sr04'`)
+    const api = client(app)
+    const co = await api.post('/api/checkout', checkoutBody([{ productId: 'hc-sr04', qty: 2 }, { productId: 'esp32-devkit', qty: 1 }]))
+    // hc-sr04: ₹99 × 2 at 5% = 9.90; esp32: ₹449 at 18% = 80.82
+    expect(co.body.totals.tax).toBeCloseTo(90.72, 2)
+    await pay(api, co)
+    const inv = await html(await api.post('/api/orders/invoice', { orderId: co.body.orderId, contact: 'buyer@example.com' }))
+    expect(inv).toContain('85437099')
+    expect(inv).toContain(`₹${(co.body.totals.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+  })
+
+  it('only gives the invoice to the buyer, the account owner and admins', async () => {
+    const { app } = setup({ ...SELLER, ADMIN_EMAILS: 'admin@example.com' })
+    const owner = client(app)
+    await owner.post('/api/auth/register', { email: 'owner@example.com', password: 'password123' })
+    const co = await owner.post('/api/checkout', checkoutBody())
+    await pay(owner, co)
+
+    expect((await owner.get(`/api/me/orders/${co.body.orderId}/invoice`)).status).toBe(200)
+    const stranger = client(app)
+    await stranger.post('/api/auth/register', { email: 'stranger@example.com', password: 'password123' })
+    expect((await stranger.get(`/api/me/orders/${co.body.orderId}/invoice`)).status).toBe(404)
+    expect((await stranger.post('/api/orders/invoice', { orderId: co.body.orderId, contact: 'stranger@example.com' })).status).toBe(404)
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    expect((await admin.get(`/api/admin/orders/${co.body.orderId}/invoice`)).status).toBe(200)
+    expect((await owner.get('/api/me/orders')).body.orders[0].invoiceNo).toMatch(/^CB\/\d{2}-\d{2}\/\d{6}$/)
+  })
+
+  it('rejects delivery states that are not Indian states/UTs', async () => {
+    const { app } = setup()
+    const res = await client(app).post('/api/checkout', { ...checkoutBody(), address: { ...checkoutBody().address, state: 'Atlantis' } })
+    expect(res.status).toBe(400)
+    expect(res.body.error.details[0].path).toBe('address.state')
   })
 })
 

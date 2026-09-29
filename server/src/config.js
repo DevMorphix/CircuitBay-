@@ -25,6 +25,16 @@ const schema = z
     // catalog from this API) when an admin clicks 'Publish site changes'
     SITE_DEPLOY_HOOK_URL: z.string().url().optional(),
 
+    // Seller details printed on GST tax invoices.
+    // TODO_CLIENT: legal name, GSTIN, registered address and its state code.
+    BUSINESS_LEGAL_NAME: z.string().default('CircuitBay'),
+    BUSINESS_GSTIN: z
+      .string()
+      .regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, 'must be a valid 15-character GSTIN')
+      .optional(),
+    BUSINESS_ADDRESS: z.string().default('Registered address — TODO_CLIENT'),
+    BUSINESS_STATE_CODE: z.string().regex(/^\d{2}$/).optional(), // e.g. 32 = Kerala
+
     PAYMENTS_PROVIDER: z.enum(['razorpay', 'fake']).default('fake'),
     RAZORPAY_KEY_ID: z.string().optional(),
     RAZORPAY_KEY_SECRET: z.string().optional(),

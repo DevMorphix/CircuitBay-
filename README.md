@@ -102,7 +102,8 @@ placeholder that needs real client input.
 
 - [x] Admin dashboard (`/admin`)
 - [x] Build product, blog and project pages from the API catalog (so admin edits reach the site) + "Publish site changes" button
-- [ ] GST tax invoices for every order
+- [x] GST tax invoices for every order (sequential per financial year, CGST+SGST / IGST by place of supply, per-product HSN + rate, printable, for customers and admins)
+- [ ] GST credit notes when an invoiced order is cancelled or refunded
 - [ ] Refunds sent from admin through Razorpay's API (today: refund in the Razorpay dashboard, then record it in admin)
 - [ ] Error monitoring (Sentry) + analytics ID
 - [ ] Email polish: HTML templates, email verification, unsubscribe page, newsletter sync
@@ -116,7 +117,9 @@ placeholder that needs real client input.
 - [ ] Real products, prices, stock, photos and datasheets (enter them in `/admin`)
 - [ ] Company story, founder bio and photo, real stats, school logos, project photos and builder names
 - [ ] Logo files, social links, contact email/phone/address
-- [ ] Shipping fees, GST treatment, return window, FAQ answers
+- [ ] Shipping fees, return window, FAQ answers
+- [ ] GST decisions with the CA: prices shown with or without GST (today: GST is added at checkout), GST on shipping, invoice layout review
+- [ ] GST details: legal name, GSTIN, registered address/state (API settings `BUSINESS_*`) and an HSN code for every product
 - [ ] Privacy, terms, refund and shipping policies reviewed by a lawyer
 - [ ] ATL package details and regions served (`/schools`)
 - [ ] Sign-off on all draft copy; expert review of the technical articles

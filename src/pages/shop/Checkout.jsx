@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { OrderSummary } from '../../components/shop/OrderSummary.jsx'
 import { formatPrice, paymentMethods } from '../../content/shopData.js'
+import { STATE_NAMES } from '../../content/indianStates.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { api, fieldErrors } from '../../lib/api.js'
@@ -155,7 +156,20 @@ export function Checkout() {
                 <In label="Apartment, landmark (optional)" id="line2" autoComplete="address-line2" required={false} className="sm:col-span-2" value={form.line2} onChange={set('line2')} />
                 <In label="City" id="city" autoComplete="address-level2" value={form.city} onChange={set('city')} error={fe['address.city']} />
                 <In label="PIN code" id="pin" inputMode="numeric" pattern="[0-9]{6}" autoComplete="postal-code" value={form.pin} onChange={set('pin')} error={fe['address.pin']} />
-                <In label="State" id="state" autoComplete="address-level1" className="sm:col-span-2" value={form.state} onChange={set('state')} error={fe['address.state']} />
+                <div className="sm:col-span-2">
+                  <label htmlFor="state" className="mb-1.5 block text-sm font-medium text-ink-900">
+                    State
+                  </label>
+                  <select id="state" required autoComplete="address-level1" className="field" value={form.state} onChange={set('state')} aria-invalid={Boolean(fe['address.state'])}>
+                    <option value="" disabled>
+                      Choose your state
+                    </option>
+                    {STATE_NAMES.map((n) => (
+                      <option key={n}>{n}</option>
+                    ))}
+                  </select>
+                  {fe['address.state'] && <p className="mt-1 text-xs font-medium text-navy-800">{fe['address.state']}</p>}
+                </div>
                 <div className="sm:col-span-2">
                   <Button type="submit">Continue to shipping</Button>
                 </div>

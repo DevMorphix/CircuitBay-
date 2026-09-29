@@ -6,8 +6,10 @@ import { Button } from '../components/ui/Button.jsx'
 import { Icon } from '../components/ui/Icon.jsx'
 import { FieldError, FormError, FormSent } from '../components/ui/FormBits.jsx'
 import { ProductCard } from '../components/shop/ProductCard.jsx'
+import { InvoiceButton } from '../components/shop/InvoiceButton.jsx'
 import { brand } from '../content/siteContent.js'
 import { formatPrice } from '../content/shopData.js'
+import { STATE_NAMES } from '../content/indianStates.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { api, fieldErrors } from '../lib/api.js'
 import { useApi } from '../lib/useApi.js'
@@ -119,9 +121,12 @@ function Orders() {
                 </p>
               </div>
               <span className="chip">{STATUS_LABEL[o.status] ?? o.status}</span>
-              <Button to={`/shop/track?order=${o.id}`} variant="secondary" className="px-4! py-2!">
-                Track
-              </Button>
+              <div className="flex gap-2">
+                {o.invoiceNo && <InvoiceButton path={`/me/orders/${o.id}/invoice`} />}
+                <Button to={`/shop/track?order=${o.id}`} variant="secondary" className="px-4! py-2!">
+                  Track
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
@@ -178,7 +183,20 @@ function Addresses() {
           <AField id="ad-line1" name="line1" label="Address" required className="sm:col-span-2" error={fe.line1} />
           <AField id="ad-line2" name="line2" label="Apartment, landmark (optional)" className="sm:col-span-2" />
           <AField id="ad-city" name="city" label="City" required error={fe.city} />
-          <AField id="ad-state" name="state" label="State" required error={fe.state} />
+          <div>
+            <label htmlFor="ad-state" className="mb-1.5 block text-sm font-medium text-ink-900">
+              State
+            </label>
+            <select id="ad-state" name="state" required defaultValue="" className="field" aria-invalid={Boolean(fe.state)}>
+              <option value="" disabled>
+                Choose your state
+              </option>
+              {STATE_NAMES.map((n) => (
+                <option key={n}>{n}</option>
+              ))}
+            </select>
+            <FieldError message={fe.state} />
+          </div>
           <label className="flex items-center gap-2 text-sm text-ink-900 sm:col-span-2">
             <input type="checkbox" name="isDefault" className="h-4 w-4 accent-brand-600" /> Make this my default address
           </label>

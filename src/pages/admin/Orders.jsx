@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../../lib/api.js'
+import { InvoiceButton } from '../../components/shop/InvoiceButton.jsx'
 import { useApi } from '../../lib/useApi.js'
 import { dateTime, rupees, btn, ORDER_STATUS } from './format.js'
 import { Empty, Field, LoadState, PageTitle, Panel, Pill, StatusPill } from './ui.jsx'
@@ -192,7 +193,7 @@ export function OrderDetail() {
                 {o.notes && <p className="mt-3 rounded-lg bg-surface-soft p-3 text-sm text-ink-900">Note: {o.notes}</p>}
               </Panel>
 
-              <Panel title="Payment">
+              <Panel title="Payment" action={o.invoiceNo && <InvoiceButton path={`/admin/orders/${o.id}/invoice`} label={o.invoiceNo} />}>
                 <dl className="space-y-1 text-sm text-ink-600">
                   <div className="flex justify-between gap-3"><dt>Provider</dt><dd className="text-ink-900">{o.paymentProvider}</dd></div>
                   <div className="flex justify-between gap-3"><dt>Order</dt><dd className="truncate text-ink-900">{o.paymentOrderId ?? '—'}</dd></div>

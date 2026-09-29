@@ -39,6 +39,7 @@ export const emails = {
       `Total paid: ${rupees(order.total_paise)}`,
       '',
       `Track it: ${siteUrl}/shop/track?order=${order.id}`,
+      `Your GST invoice${order.invoice_no ? ` (${order.invoice_no})` : ''} is available on the same page, or under My account → Orders.`,
       '',
       'Create. Break. Learn.',
       '— CircuitBay',

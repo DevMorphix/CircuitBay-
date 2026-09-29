@@ -120,6 +120,8 @@ export const schema = {
       url: absoluteUrl(`/shop/product/${p.id}`),
       priceCurrency: 'INR',
       price: p.price.toFixed(2),
+      // Catalogue prices exclude GST (added at checkout) — say so explicitly
+      priceSpecification: { '@type': 'UnitPriceSpecification', price: p.price.toFixed(2), priceCurrency: 'INR', valueAddedTaxIncluded: false },
       availability: `https://schema.org/${p.stock === 0 ? 'OutOfStock' : p.stock < 10 ? 'LimitedAvailability' : 'InStock'}`,
       itemCondition: 'https://schema.org/NewCondition',
       seller: { '@id': `${SITE.url}/#organization` },

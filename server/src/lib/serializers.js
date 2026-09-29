@@ -28,6 +28,8 @@ export const product = (config) => (p) => ({
   specs: parseJson(p.specs, {}),
   images: parseJson(p.images, []).map((k) => mediaUrl(config, k)),
   datasheetUrl: mediaUrl(config, p.datasheet_key),
+  hsnCode: p.hsn_code ?? null,
+  gstRate: p.gst_rate ?? 18,
   rating: p.rating,
   reviews: p.reviews_count,
   active: Boolean(p.active),
@@ -82,6 +84,8 @@ export const order = (o, items = [], events = []) => ({
   },
   courier: o.courier,
   trackingNumber: o.tracking_number,
-  items: items.map((i) => ({ productId: i.product_id, name: i.name, unitPrice: i.unit_price_paise / 100, qty: i.qty })),
+  invoiceNo: o.invoice_no ?? null,
+  invoicedAt: o.invoiced_at ?? null,
+  items: items.map((i) => ({ productId: i.product_id, name: i.name, unitPrice: i.unit_price_paise / 100, qty: i.qty, hsnCode: i.hsn_code ?? null, gstRate: i.gst_rate ?? 18 })),
   events: events.map((e) => ({ status: e.status, note: e.note, at: e.created_at })),
 })

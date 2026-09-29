@@ -7,7 +7,7 @@ import { summarise } from '../../context/CartContext.jsx'
 export function OrderSummary({ items, subtotal, shippingMethod = 'standard', serverTotals, showItems = false, showCoupon = true, children }) {
   const [code, setCode] = useState('')
   const [couponMsg, setCouponMsg] = useState('')
-  const { shipping, tax, total } = serverTotals ?? summarise(subtotal, shippingMethod)
+  const { shipping, tax, total } = serverTotals ?? summarise(items, shippingMethod)
 
   return (
     <aside className="card p-6" aria-label="Order summary">
@@ -29,8 +29,7 @@ export function OrderSummary({ items, subtotal, shippingMethod = 'standard', ser
       <dl className="mt-4 space-y-2.5 text-sm">
         <Row label="Subtotal" value={formatPrice(subtotal)} />
         <Row label="Shipping" value={shipping === 0 ? 'Free' : formatPrice(shipping)} />
-        {/* TODO_CLIENT: confirm GST treatment (inclusive vs. added) */}
-        <Row label="Tax (GST 18%)" value={formatPrice(tax)} />
+        <Row label="GST" value={formatPrice(tax)} />
       </dl>
 
       {showCoupon && (

@@ -5,6 +5,7 @@ import { Section } from '../../components/ui/Section.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { formatPrice } from '../../content/shopData.js'
+import { InvoiceButton } from '../../components/shop/InvoiceButton.jsx'
 
 // C6 confirmation — order number, summary, expected delivery, Track.
 // `order` is the verified order returned by POST /api/checkout/verify; on a
@@ -58,6 +59,7 @@ export function OrderConfirmation() {
         )}
         <div className="mt-8 flex flex-wrap justify-center gap-4">
           <Button to={`/shop/track?order=${id}`}>Track your order</Button>
+          {order?.invoiceNo && <InvoiceButton path="/orders/invoice" body={{ orderId: id, contact: order.contact.email }} label="Download GST invoice" className="py-3!" />}
           <Button to="/shop" variant="secondary">
             Continue shopping
           </Button>

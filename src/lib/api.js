@@ -51,6 +51,31 @@ export const api = {
   },
 }
 
+// Opens an invoice (HTML from the API) in a new tab. The tab is opened
+// first — synchronously, inside the click — so popup blockers allow it,
+// then filled once the invoice arrives.
+export async function openInvoice(method, path, body) {
+  const tab = window.open('', '_blank')
+  try {
+    const res = await fetch(`${BASE}/api${path}`, {
+      method,
+      credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    if (!res.ok) {
+      const e = (await res.json().catch(() => null))?.error
+      throw new ApiError(res.status, e?.code ?? 'error', e?.message ?? "Couldn't load the invoice.")
+    }
+    const url = URL.createObjectURL(new Blob([await res.text()], { type: 'text/html' }))
+    if (tab) tab.location.href = url
+    else window.location.href = url
+  } catch (err) {
+    tab?.close()
+    throw err
+  }
+}
+
 // Field-level messages from a 400 response: { email: '…', 'address.pin': '…' }
 export const fieldErrors = (err) =>
   Object.fromEntries((err?.details ?? []).filter((d) => d.path).map((d) => [d.path, d.message]))

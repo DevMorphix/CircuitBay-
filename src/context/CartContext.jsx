@@ -60,14 +60,20 @@ export function useCart() {
   return ctx
 }
 
-// Estimated totals for the cart and checkout summary. Mirrors
-// server/src/lib/money.js (computed in paise so rounding matches); the
-// server's totals are final and replace this once checkout starts.
+// Estimated totals for the cart and checkout summary. Mirrors priceLines()
+// in server/src/lib/money.js: in paise, GST per line at each product's rate,
+// so rounding matches. The server's totals are final and replace this once
+// checkout starts.
 // eslint-disable-next-line react/only-export-components
-export function summarise(subtotal, shippingMethod = 'standard') {
-  const sub = Math.round(subtotal * 100)
+export function summarise(items, shippingMethod = 'standard') {
+  let sub = 0
+  let tax = 0
+  for (const l of items) {
+    const taxable = Math.round(l.product.price * 100) * l.qty
+    sub += taxable
+    tax += Math.round((taxable * (l.product.gstRate ?? 18)) / 100)
+  }
   let ship = shippingMethod === 'express' ? 149_00 : 79_00
   if ((shippingMethod === 'standard' && sub >= 999_00) || sub === 0) ship = 0
-  const tax = Math.round(sub * 0.18)
-  return { subtotal, shipping: ship / 100, tax: tax / 100, total: (sub + ship + tax) / 100 }
+  return { subtotal: sub / 100, shipping: ship / 100, tax: tax / 100, total: (sub + ship + tax) / 100 }
 }

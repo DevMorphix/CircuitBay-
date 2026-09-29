@@ -5,12 +5,23 @@ import { limitByIp } from '../middleware/rateLimit.js'
 import { requireUser } from '../middleware/auth.js'
 import { randomId } from '../lib/crypto.js'
 import { HttpError, badRequest, conflict, notFound } from '../lib/errors.js'
-import { priceOrder } from '../lib/money.js'
+import { priceLines } from '../lib/money.js'
+import { stateCode } from '../../../src/content/indianStates.js'
 import { order as serializeOrder } from '../lib/serializers.js'
 import * as s from '../lib/schemas.js'
+import { invoiceResponse } from '../services/invoice.js'
 import { FULFILMENT_STATUSES, cancelAndRestockStatements, isStockConflict, markOrderPaid, markOrderPaymentFailed } from '../services/orders.js'
 
 export const orders = new Hono()
+
+// Guest access check (tracking, invoices): the order's email, or its
+// mobile number in any common format
+const lastTenDigits = (v) => v.replace(/\D/g, '').slice(-10)
+function contactMatches(order, contact) {
+  if (!order) return false
+  if (order.contact_email.toLowerCase() === contact.toLowerCase()) return true
+  return lastTenDigits(contact).length === 10 && lastTenDigits(order.contact_phone) === lastTenDigits(contact)
+}
 
 const checkoutSchema = z.object({
   items: z
@@ -22,7 +33,7 @@ const checkoutSchema = z.object({
     line1: z.string().trim().min(3).max(200),
     line2: z.string().trim().max(200).optional(),
     city: z.string().trim().min(2).max(80),
-    state: z.string().trim().min(2).max(80),
+    state: s.indianState,
     pin: s.pin,
   }),
   shippingMethod: z.enum(['standard', 'express']).default('standard'),
@@ -52,9 +63,12 @@ orders.post('/checkout', limitByIp('checkout', { limit: 20, windowSec: 600 }), b
   }
   if (problems.length) throw conflict('Some items in your cart need attention.', problems)
 
-  const lines = ids.map((id) => ({ product: byId.get(id), qty: qtyById.get(id) }))
-  const subtotal = lines.reduce((n, l) => n + l.product.price_paise * l.qty, 0)
-  const totals = priceOrder(subtotal, d.shippingMethod)
+  // Tax per line at each product's GST rate (snapshotted on the order lines)
+  const totals = priceLines(
+    ids.map((id) => ({ product: byId.get(id), qty: qtyById.get(id), unitPricePaise: byId.get(id).price_paise, gstRate: byId.get(id).gst_rate })),
+    d.shippingMethod,
+  )
+  const lines = totals.lines
 
   const orderId = randomId(8, 'CB')
   const now = Date.now()
@@ -68,18 +82,18 @@ orders.post('/checkout', limitByIp('checkout', { limit: 20, windowSec: 600 }), b
         sql: `INSERT INTO orders (id, user_id, status, contact_name, contact_email, contact_phone,
                 ship_line1, ship_line2, ship_city, ship_state, ship_pin, shipping_method,
                 subtotal_paise, shipping_paise, tax_paise, total_paise, payment_provider,
-                notes, created_at, updated_at)
-              VALUES (?, ?, 'pending_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                place_of_supply, notes, created_at, updated_at)
+              VALUES (?, ?, 'pending_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params: [
           orderId, c.var.user?.id, d.contact.name, d.contact.email, d.contact.phone,
           d.address.line1, d.address.line2, d.address.city, d.address.state, d.address.pin, d.shippingMethod,
           totals.subtotal, totals.shipping, totals.tax, totals.total, payments.name,
-          d.notes, now, now,
+          stateCode(d.address.state), d.notes, now, now,
         ],
       },
       ...lines.map((l) => ({
-        sql: 'INSERT INTO order_items (order_id, product_id, name, unit_price_paise, qty) VALUES (?, ?, ?, ?, ?)',
-        params: [orderId, l.product.id, l.product.name, l.product.price_paise, l.qty],
+        sql: 'INSERT INTO order_items (order_id, product_id, name, unit_price_paise, qty, hsn_code, gst_rate, tax_paise) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        params: [orderId, l.product.id, l.product.name, l.unitPricePaise, l.qty, l.product.hsn_code, l.gstRate, l.taxPaise],
       })),
       ...lines.map((l) => ({
         sql: 'UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ?',
@@ -177,11 +191,7 @@ orders.get(
     const { db } = c.var.svc
     const { orderId, contact } = c.req.valid('query')
     const order = await db.first('SELECT * FROM orders WHERE id = ? COLLATE NOCASE', [orderId])
-    const digits = (v) => v.replace(/\D/g, '').slice(-10)
-    const matches =
-      order &&
-      (order.contact_email.toLowerCase() === contact.toLowerCase() || (digits(contact).length === 10 && digits(order.contact_phone) === digits(contact)))
-    if (!matches) throw notFound("We couldn't find an order with those details.")
+    if (!contactMatches(order, contact)) throw notFound("We couldn't find an order with those details.")
 
     const [items, events] = await Promise.all([
       db.all('SELECT * FROM order_items WHERE order_id = ?', [order.id]),
@@ -189,7 +199,7 @@ orders.get(
     ])
     const full = serializeOrder(order, items, events)
     return c.json({
-      order: { id: full.id, status: full.status, createdAt: full.createdAt, items: full.items, totals: full.totals, shippingMethod: full.shippingMethod, courier: full.courier, trackingNumber: full.trackingNumber, events: full.events },
+      order: { id: full.id, status: full.status, invoiceNo: full.invoiceNo, createdAt: full.createdAt, items: full.items, totals: full.totals, shippingMethod: full.shippingMethod, courier: full.courier, trackingNumber: full.trackingNumber, events: full.events },
       steps: FULFILMENT_STATUSES,
     })
   },
@@ -211,4 +221,26 @@ orders.get('/me/orders/:id', requireUser, async (c) => {
     db.all('SELECT * FROM order_events WHERE order_id = ? ORDER BY created_at, id', [order.id]),
   ])
   return c.json({ order: serializeOrder(order, items, events) })
+})
+
+// ------------------------------------------------------------ invoices --
+// Guest copy: same check as tracking (order id + the order's email or
+// phone), sent in the body so personal details stay out of URLs and logs.
+orders.post(
+  '/orders/invoice',
+  limitByIp('invoice', { limit: 30, windowSec: 900 }),
+  body(z.object({ orderId: z.string().trim().min(3).max(40), contact: z.string().trim().min(3).max(254) })),
+  async (c) => {
+    const { orderId, contact } = c.req.valid('json')
+    const order = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ? COLLATE NOCASE', [orderId])
+    if (!contactMatches(order, contact)) throw notFound("We couldn't find an order with those details.")
+    return invoiceResponse(c, order)
+  },
+)
+
+// Signed-in customer's own invoice
+orders.get('/me/orders/:id/invoice', requireUser, async (c) => {
+  const order = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ? AND user_id = ?', [c.req.param('id'), c.var.user.id])
+  if (!order) throw notFound('Order not found.')
+  return invoiceResponse(c, order)
 })

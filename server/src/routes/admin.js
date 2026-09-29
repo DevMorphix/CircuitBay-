@@ -12,6 +12,7 @@ import * as s from '../lib/schemas.js'
 import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from '../storage/index.js'
 import { emails } from '../services/email.js'
 import { FULFILMENT_STATUSES, cancelAndRestockStatements } from '../services/orders.js'
+import { invoiceResponse } from '../services/invoice.js'
 
 // Everything under /api/admin requires role=admin. Admins are the accounts
 // whose email is listed in ADMIN_EMAILS when they register.
@@ -69,13 +70,15 @@ const productIn = z.object({
   specs: z.record(z.string(), z.string().max(200)).default({}),
   images: z.array(z.string().max(300)).max(12).default([]), // storage keys
   datasheetKey: z.string().max(300).nullable().optional(),
+  hsnCode: z.string().trim().regex(/^\d{4,8}$/, 'HSN codes are 4–8 digits.').nullable().optional(),
+  gstRate: z.union([z.literal(0), z.literal(5), z.literal(12), z.literal(18), z.literal(28)]).default(18),
   active: z.boolean().default(true),
 })
 
 const productParams = (p, now) => [
   p.name, p.category, p.kit ? 1 : 0, p.level ?? null, rupeesToPaise(p.price), p.stock, p.brand ?? null, p.type ?? null,
   json(p.badges), p.forWhat ?? null, p.build ?? null, json(p.inside), json(p.specs), json(p.images), p.datasheetKey ?? null,
-  p.active ? 1 : 0, now,
+  p.active ? 1 : 0, p.hsnCode ?? null, p.gstRate, now,
 ]
 
 admin.get('/products', query(z.object({ q: z.string().max(100).optional(), ...page })), async (c) => {
@@ -102,8 +105,8 @@ admin.post('/products', body(productIn), async (c) => {
   const now = Date.now()
   await db.run(
     `INSERT INTO products (name, category, is_kit, level, price_paise, stock, brand, type, badges, for_what, build,
-       inside, specs, images, datasheet_key, active, updated_at, id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       inside, specs, images, datasheet_key, active, hsn_code, gst_rate, updated_at, id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [...productParams(p, now), p.id, now],
   )
   return c.json({ product: adminProduct(config)(await db.first('SELECT * FROM products WHERE id = ?', [p.id])) }, 201)
@@ -115,7 +118,7 @@ admin.put('/products/:id', body(productIn.omit({ id: true })), async (c) => {
   const p = c.req.valid('json')
   const res = await db.run(
     `UPDATE products SET name = ?, category = ?, is_kit = ?, level = ?, price_paise = ?, stock = ?, brand = ?, type = ?,
-       badges = ?, for_what = ?, build = ?, inside = ?, specs = ?, images = ?, datasheet_key = ?, active = ?, updated_at = ?
+       badges = ?, for_what = ?, build = ?, inside = ?, specs = ?, images = ?, datasheet_key = ?, active = ?, hsn_code = ?, gst_rate = ?, updated_at = ?
      WHERE id = ?`,
     [...productParams(p, Date.now()), id],
   )
@@ -223,6 +226,12 @@ admin.post(
     return c.json({ ok: true })
   },
 )
+
+admin.get('/orders/:id/invoice', async (c) => {
+  const o = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ?', [c.req.param('id')])
+  if (!o) throw notFound('Order not found.')
+  return invoiceResponse(c, o)
+})
 
 // Record a refund made in the Razorpay dashboard (clears 'refunds needed')
 admin.post('/orders/:id/refunded', body(z.object({ note: z.string().trim().max(300).optional() })), async (c) => {

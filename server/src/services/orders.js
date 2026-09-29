@@ -1,4 +1,27 @@
 import { emails } from './email.js'
+import { financialYear } from '../lib/money.js'
+
+// Issues the next sequential GST invoice number for a paid order, e.g.
+// 'CB/26-27/000042' (15 chars; GST allows up to 16). Both statements
+// re-check the order inside the transaction, so a number is only consumed
+// when it's actually assigned — no gaps, no duplicates, even if the
+// webhook and the browser confirm the same payment at once.
+export function invoiceStatements(orderId, now = Date.now()) {
+  const fy = financialYear(now)
+  const eligible = "EXISTS (SELECT 1 FROM orders WHERE id = ? AND invoice_no IS NULL AND paid_at IS NOT NULL AND status != 'cancelled')"
+  return [
+    {
+      sql: `INSERT INTO invoice_counters (fy, last) SELECT ?, 1 WHERE ${eligible}
+            ON CONFLICT(fy) DO UPDATE SET last = last + 1`,
+      params: [fy, orderId],
+    },
+    {
+      sql: `UPDATE orders SET invoice_no = (SELECT 'CB/' || fy || '/' || printf('%06d', last) FROM invoice_counters WHERE fy = ?), invoiced_at = ?
+            WHERE id = ? AND invoice_no IS NULL AND paid_at IS NOT NULL AND status != 'cancelled'`,
+      params: [fy, now, orderId],
+    },
+  ]
+}
 
 // Stock model: checkout RESERVES stock (decrements immediately, atomically
 // — the `stock >= 0` CHECK constraint makes an oversell abort the whole
@@ -23,7 +46,10 @@ export async function markOrderPaid(svc, orderId, paymentId) {
     [paymentId, now, now, orderId],
   )
   if (res.changes === 1) {
-    await db.run(`INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'placed', 'Payment received', ?)`, [orderId, now])
+    await db.batch([
+      { sql: `INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'placed', 'Payment received', ?)`, params: [orderId, now] },
+      ...invoiceStatements(orderId, now),
+    ])
     await sendConfirmation(svc, orderId)
     return true
   }
@@ -57,6 +83,7 @@ async function placeLatePayment(svc, orderId, paymentId) {
         sql: `UPDATE orders SET status = 'placed', payment_id = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'cancelled' AND paid_at IS NULL`,
         params: [paymentId, now, now, orderId],
       },
+      ...invoiceStatements(orderId, now),
     ])
   } catch (err) {
     if (!isStockConflict(err)) throw err

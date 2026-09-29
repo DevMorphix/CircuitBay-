@@ -46,6 +46,8 @@ for (const p of products) {
       inside: p.inside ?? [],
       specs: p.specs ?? {},
       images: [],
+      hsn_code: p.hsnCode ?? null, // TODO_CLIENT: HSN code per product
+      gst_rate: p.gstRate ?? 18,
       rating: p.rating ?? 0,
       reviews_count: p.reviews ?? 0,
       active: true,

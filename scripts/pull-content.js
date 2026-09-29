@@ -45,7 +45,7 @@ async function all(path, key, limit) {
 
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined && o[k] !== null).map((k) => [k, o[k]]))
 
-const PRODUCT_FIELDS = ['id', 'name', 'category', 'kit', 'level', 'price', 'stock', 'brand', 'type', 'badges', 'forWhat', 'build', 'inside', 'specs', 'images', 'datasheetUrl', 'rating', 'reviews']
+const PRODUCT_FIELDS = ['id', 'name', 'category', 'kit', 'level', 'price', 'stock', 'brand', 'type', 'badges', 'forWhat', 'build', 'inside', 'specs', 'images', 'datasheetUrl', 'hsnCode', 'gstRate', 'rating', 'reviews']
 const ARTICLE_FIELDS = ['slug', 'title', 'seoTitle', 'category', 'excerpt', 'readTime', 'author', 'date', 'updated', 'featured', 'cover', 'parts', 'relatedProjects', 'body']
 const PROJECT_FIELDS = ['id', 'title', 'blurb', 'description', 'tags', 'builder', 'category', 'image', 'link', 'featured']
 
