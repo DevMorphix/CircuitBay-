@@ -123,6 +123,7 @@ function Orders() {
               <span className="chip">{STATUS_LABEL[o.status] ?? o.status}</span>
               <div className="flex gap-2">
                 {o.invoiceNo && <InvoiceButton path={`/me/orders/${o.id}/invoice`} />}
+                {o.creditNoteNo && <InvoiceButton path={`/me/orders/${o.id}/credit-note`} label="Credit note" />}
                 <Button to={`/shop/track?order=${o.id}`} variant="secondary" className="px-4! py-2!">
                   Track
                 </Button>

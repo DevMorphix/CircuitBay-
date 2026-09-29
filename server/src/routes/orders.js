@@ -9,7 +9,7 @@ import { priceLines } from '../lib/money.js'
 import { stateCode } from '../../../src/content/indianStates.js'
 import { order as serializeOrder } from '../lib/serializers.js'
 import * as s from '../lib/schemas.js'
-import { invoiceResponse } from '../services/invoice.js'
+import { creditNoteResponse, invoiceResponse } from '../services/invoice.js'
 import { FULFILMENT_STATUSES, cancelAndRestockStatements, isStockConflict, markOrderPaid, markOrderPaymentFailed } from '../services/orders.js'
 
 export const orders = new Hono()
@@ -190,7 +190,7 @@ orders.get(
   async (c) => {
     const { db } = c.var.svc
     const { orderId, contact } = c.req.valid('query')
-    const order = await db.first('SELECT * FROM orders WHERE id = ? COLLATE NOCASE', [orderId])
+    const order = await db.first('SELECT orders.*, (SELECT number FROM credit_notes WHERE order_id = orders.id) AS credit_note_no FROM orders WHERE id = ? COLLATE NOCASE', [orderId])
     if (!contactMatches(order, contact)) throw notFound("We couldn't find an order with those details.")
 
     const [items, events] = await Promise.all([
@@ -199,7 +199,7 @@ orders.get(
     ])
     const full = serializeOrder(order, items, events)
     return c.json({
-      order: { id: full.id, status: full.status, invoiceNo: full.invoiceNo, createdAt: full.createdAt, items: full.items, totals: full.totals, shippingMethod: full.shippingMethod, courier: full.courier, trackingNumber: full.trackingNumber, events: full.events },
+      order: { id: full.id, status: full.status, invoiceNo: full.invoiceNo, creditNoteNo: full.creditNoteNo, createdAt: full.createdAt, items: full.items, totals: full.totals, shippingMethod: full.shippingMethod, courier: full.courier, trackingNumber: full.trackingNumber, events: full.events },
       steps: FULFILMENT_STATUSES,
     })
   },
@@ -208,13 +208,13 @@ orders.get(
 // Signed-in customer's orders
 orders.get('/me/orders', requireUser, async (c) => {
   const { db } = c.var.svc
-  const rows = await db.all(`SELECT * FROM orders WHERE user_id = ? AND status != 'pending_payment' ORDER BY created_at DESC LIMIT 100`, [c.var.user.id])
+  const rows = await db.all(`SELECT orders.*, (SELECT number FROM credit_notes WHERE order_id = orders.id) AS credit_note_no FROM orders WHERE user_id = ? AND status != 'pending_payment' ORDER BY created_at DESC LIMIT 100`, [c.var.user.id])
   return c.json({ orders: rows.map((o) => serializeOrder(o)) })
 })
 
 orders.get('/me/orders/:id', requireUser, async (c) => {
   const { db } = c.var.svc
-  const order = await db.first('SELECT * FROM orders WHERE id = ? AND user_id = ?', [c.req.param('id'), c.var.user.id])
+  const order = await db.first('SELECT orders.*, (SELECT number FROM credit_notes WHERE order_id = orders.id) AS credit_note_no FROM orders WHERE id = ? AND user_id = ?', [c.req.param('id'), c.var.user.id])
   if (!order) throw notFound('Order not found.')
   const [items, events] = await Promise.all([
     db.all('SELECT * FROM order_items WHERE order_id = ?', [order.id]),
@@ -243,4 +243,23 @@ orders.get('/me/orders/:id/invoice', requireUser, async (c) => {
   const order = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ? AND user_id = ?', [c.req.param('id'), c.var.user.id])
   if (!order) throw notFound('Order not found.')
   return invoiceResponse(c, order)
+})
+
+// Credit notes — same access rules as invoices
+orders.post(
+  '/orders/credit-note',
+  limitByIp('invoice', { limit: 30, windowSec: 900 }),
+  body(z.object({ orderId: z.string().trim().min(3).max(40), contact: z.string().trim().min(3).max(254) })),
+  async (c) => {
+    const { orderId, contact } = c.req.valid('json')
+    const order = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ? COLLATE NOCASE', [orderId])
+    if (!contactMatches(order, contact)) throw notFound("We couldn't find an order with those details.")
+    return creditNoteResponse(c, order)
+  },
+)
+
+orders.get('/me/orders/:id/credit-note', requireUser, async (c) => {
+  const order = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ? AND user_id = ?', [c.req.param('id'), c.var.user.id])
+  if (!order) throw notFound('Order not found.')
+  return creditNoteResponse(c, order)
 })

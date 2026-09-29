@@ -103,7 +103,7 @@ placeholder that needs real client input.
 - [x] Admin dashboard (`/admin`)
 - [x] Build product, blog and project pages from the API catalog (so admin edits reach the site) + "Publish site changes" button
 - [x] GST tax invoices for every order (sequential per financial year, CGST+SGST / IGST by place of supply, per-product HSN + rate, printable, for customers and admins)
-- [ ] GST credit notes when an invoiced order is cancelled or refunded
+- [x] GST credit notes when an invoiced order is cancelled (automatic, own CN/ sequence, printable for customers and admins)
 - [x] Refunds sent from admin through Razorpay's API (one click, can't double-refund, customer emailed; failed refunds reopen via webhook)
 - [ ] Error monitoring (Sentry) + analytics ID
 - [ ] Email polish: HTML templates, email verification, unsubscribe page, newsletter sync

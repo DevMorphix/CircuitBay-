@@ -193,7 +193,17 @@ export function OrderDetail() {
                 {o.notes && <p className="mt-3 rounded-lg bg-surface-soft p-3 text-sm text-ink-900">Note: {o.notes}</p>}
               </Panel>
 
-              <Panel title="Payment" action={o.invoiceNo && <InvoiceButton path={`/admin/orders/${o.id}/invoice`} label={o.invoiceNo} />}>
+              <Panel
+                title="Payment"
+                action={
+                  (o.invoiceNo || o.creditNoteNo) && (
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {o.invoiceNo && <InvoiceButton path={`/admin/orders/${o.id}/invoice`} label={o.invoiceNo} />}
+                      {o.creditNoteNo && <InvoiceButton path={`/admin/orders/${o.id}/credit-note`} label={o.creditNoteNo} />}
+                    </div>
+                  )
+                }
+              >
                 <dl className="space-y-1 text-sm text-ink-600">
                   <div className="flex justify-between gap-3"><dt>Provider</dt><dd className="text-ink-900">{o.paymentProvider}</dd></div>
                   <div className="flex justify-between gap-3"><dt>Order</dt><dd className="truncate text-ink-900">{o.paymentOrderId ?? '—'}</dd></div>

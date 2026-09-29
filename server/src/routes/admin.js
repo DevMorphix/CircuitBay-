@@ -11,8 +11,8 @@ import { article, mediaUrl, order as serializeOrder, product, project } from '..
 import * as s from '../lib/schemas.js'
 import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from '../storage/index.js'
 import { emails } from '../services/email.js'
-import { FULFILMENT_STATUSES, cancelAndRestockStatements } from '../services/orders.js'
-import { invoiceResponse } from '../services/invoice.js'
+import { FULFILMENT_STATUSES, cancelAndRestockStatements, creditNoteStatements } from '../services/orders.js'
+import { creditNoteResponse, invoiceResponse } from '../services/invoice.js'
 
 // Everything under /api/admin requires role=admin. Admins are the accounts
 // whose email is listed in ADMIN_EMAILS when they register.
@@ -169,13 +169,13 @@ admin.get('/orders', query(z.object({ status: z.string().optional(), q: z.string
     params.push(...Array(4).fill(`%${q}%`))
   }
   const w = where.length ? `WHERE ${where.join(' AND ')}` : ''
-  const rows = await db.all(`SELECT * FROM orders ${w} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, (pg - 1) * limit])
+  const rows = await db.all(`SELECT orders.*, (SELECT number FROM credit_notes WHERE order_id = orders.id) AS credit_note_no FROM orders ${w} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...params, limit, (pg - 1) * limit])
   return c.json({ orders: rows.map((o) => ({ ...serializeOrder(o), refundedAt: o.refunded_at })) })
 })
 
 admin.get('/orders/:id', async (c) => {
   const { db } = c.var.svc
-  const o = await db.first('SELECT * FROM orders WHERE id = ?', [c.req.param('id')])
+  const o = await db.first('SELECT orders.*, (SELECT number FROM credit_notes WHERE order_id = orders.id) AS credit_note_no FROM orders WHERE id = ?', [c.req.param('id')])
   if (!o) throw notFound('Order not found.')
   const [items, events] = await Promise.all([
     db.all('SELECT * FROM order_items WHERE order_id = ?', [o.id]),
@@ -205,8 +205,10 @@ admin.post(
     if (o.status === 'cancelled') throw badRequest('This order is already cancelled.')
     const now = Date.now()
     if (d.status === 'cancelled') {
-      // Put the stock back (refund the payment in the Razorpay dashboard)
-      await db.batch(cancelAndRestockStatements(o.id, [o.status], d.note ?? 'Cancelled by CircuitBay', now))
+      // Put the stock back and, if the order was invoiced, issue the GST
+      // credit note — all in one transaction. Refund from the order page.
+      const reason = d.note ?? 'Cancelled by CircuitBay'
+      await db.batch([...cancelAndRestockStatements(o.id, [o.status], reason, now), ...creditNoteStatements(o.id, reason, now)])
     } else {
       await db.batch([
         {
@@ -226,6 +228,12 @@ admin.post(
     return c.json({ ok: true })
   },
 )
+
+admin.get('/orders/:id/credit-note', async (c) => {
+  const o = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ?', [c.req.param('id')])
+  if (!o) throw notFound('Order not found.')
+  return creditNoteResponse(c, o)
+})
 
 admin.get('/orders/:id/invoice', async (c) => {
   const o = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ?', [c.req.param('id')])

@@ -12,7 +12,11 @@ const inr = (paise) => (paise / 100).toLocaleString('en-IN', { minimumFractionDi
 const stateName = (code) => INDIAN_STATES.find((s) => s.code === code)?.name ?? '—'
 const day = (ms) => new Date(ms).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
 
-export function renderInvoice({ order: o, items, config }) {
+// `creditNote` (a credit_notes row) renders the credit note that reverses
+// this order's invoice instead of the invoice itself.
+export function renderInvoice({ order: o, items, config, creditNote: cn = null }) {
+  const docTitle = cn ? 'Credit Note' : 'Tax Invoice'
+  const docNo = cn ? cn.number : o.invoice_no
   const supplyCode = o.place_of_supply ?? stateCode(o.ship_state)
   const sellerCode = config.BUSINESS_STATE_CODE ?? config.BUSINESS_GSTIN?.slice(0, 2) ?? null
   // Same state → CGST + SGST (half each); otherwise IGST
@@ -42,7 +46,7 @@ export function renderInvoice({ order: o, items, config }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Tax invoice ${esc(o.invoice_no)} · ${esc(config.BUSINESS_LEGAL_NAME)}</title>
+<title>${docTitle} ${esc(docNo)} · ${esc(config.BUSINESS_LEGAL_NAME)}</title>
 <style>
   :root { --ink: #08060d; --muted: #636b80; --line: #d9dee8; --brand: #3269c2; }
   * { box-sizing: border-box; }
@@ -68,13 +72,19 @@ export function renderInvoice({ order: o, items, config }) {
 <main class="page">
   <header>
     <div>
-      <h1>Tax Invoice</h1>
+      <h1>${docTitle}</h1>
       <p><strong>${esc(config.BUSINESS_LEGAL_NAME)}</strong><br>${esc(config.BUSINESS_ADDRESS)}<br>
       GSTIN: <strong>${esc(config.BUSINESS_GSTIN ?? 'Not configured')}</strong>${sellerCode ? `<br>State: ${esc(stateName(sellerCode))} (${esc(sellerCode)})` : ''}</p>
     </div>
     <div class="meta">
-      <p>Invoice no. <strong>${esc(o.invoice_no)}</strong></p>
-      <p>Invoice date: ${day(o.invoiced_at)}</p>
+      ${
+        cn
+          ? `<p>Credit note no. <strong>${esc(cn.number)}</strong></p>
+      <p>Date: ${day(cn.issued_at)}</p>
+      <p>Against invoice <strong>${esc(cn.invoice_no)}</strong> dated ${day(o.invoiced_at)}</p>`
+          : `<p>Invoice no. <strong>${esc(o.invoice_no)}</strong></p>
+      <p>Invoice date: ${day(o.invoiced_at)}</p>`
+      }
       <p>Order: #${esc(o.id)} · ${day(o.created_at)}</p>
       <p>Payment: ${esc(o.payment_id ?? '—')}</p>
     </div>
@@ -98,12 +108,13 @@ export function renderInvoice({ order: o, items, config }) {
     <tfoot>
       <tr><td colspan="5">Total</td><td class="num">${inr(sum('taxable'))}</td>${intra ? `<td class="num">${inr(sum('cgst'))}</td><td class="num">${inr(sum('sgst'))}</td>` : `<td class="num">${inr(sum('igst'))}</td>`}<td class="num">${inr(sum('taxable') + sum('tax'))}</td></tr>
       ${o.shipping_paise ? `<tr><td colspan="${intra ? 8 : 7}">Shipping (${esc(o.shipping_method)})</td><td class="num">${inr(o.shipping_paise)}</td></tr>` : ''}
-      <tr class="grand"><td colspan="${intra ? 8 : 7}">Invoice total</td><td class="num">₹${inr(o.total_paise)}</td></tr>
+      <tr class="grand"><td colspan="${intra ? 8 : 7}">${cn ? 'Credit note total' : 'Invoice total'}</td><td class="num">₹${inr(cn ? cn.total_paise : o.total_paise)}</td></tr>
     </tfoot>
   </table>
 
-  <p class="words"><strong>Amount in words:</strong> ${esc(amountInWords(o.total_paise))}</p>
-  <p class="note">Tax is not payable on reverse charge. This is a computer-generated invoice and does not require a signature.</p>
+  <p class="words"><strong>Amount in words:</strong> ${esc(amountInWords(cn ? cn.total_paise : o.total_paise))}</p>
+  ${cn ? `<p><strong>Reason:</strong> ${esc(cn.reason)}. This credit note reverses the full value of invoice ${esc(cn.invoice_no)}, including the tax shown.</p>` : ''}
+  <p class="note">Tax is not payable on reverse charge. This is a computer-generated ${cn ? 'credit note' : 'invoice'} and does not require a signature.</p>
 </main>
 </body>
 </html>`
@@ -121,4 +132,16 @@ export async function invoiceResponse(c, order) {
   const items = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid', [order.id])
   c.header('Cache-Control', 'private, no-store')
   return c.html(renderInvoice({ order, items, config }))
+}
+
+// Shared response for every credit-note endpoint
+export async function creditNoteResponse(c, order) {
+  const { db, config } = c.var.svc
+  const cn = await db.first('SELECT * FROM credit_notes WHERE order_id = ?', [order.id])
+  if (!cn) {
+    return c.json({ error: { code: 'no_credit_note', message: 'This order has no credit note.' } }, 404)
+  }
+  const items = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid', [order.id])
+  c.header('Cache-Control', 'private, no-store')
+  return c.html(renderInvoice({ order, items, config, creditNote: cn }))
 }

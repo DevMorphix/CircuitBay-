@@ -56,6 +56,7 @@ export const emails = {
       '',
       `We've refunded ${rupees(order.total_paise)} for order ${order.id} to your original payment method.`,
       'It usually reaches your account within 5–7 working days, depending on your bank.',
+      `The GST credit note for this order is under My account → Orders, or at ${siteUrl}/shop/track?order=${order.id}`,
       '',
       `Questions? Reply to this email or visit ${siteUrl}/contact`,
       '',

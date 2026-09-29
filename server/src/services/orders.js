@@ -23,6 +23,30 @@ export function invoiceStatements(orderId, now = Date.now()) {
   ]
 }
 
+// Issues a full-value GST credit note for a cancelled order that already has
+// a tax invoice, e.g. 'CN/26-27/000001'. Guarded like invoiceStatements:
+// the number is only consumed if the note is actually created, and an order
+// can only ever get one. Run in the same batch as the cancellation.
+export function creditNoteStatements(orderId, reason, now = Date.now()) {
+  const fy = financialYear(now)
+  const eligible = `EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'cancelled' AND invoice_no IS NOT NULL)
+                    AND NOT EXISTS (SELECT 1 FROM credit_notes WHERE order_id = ?)`
+  return [
+    {
+      sql: `INSERT INTO credit_note_counters (fy, last) SELECT ?, 1 WHERE ${eligible}
+            ON CONFLICT(fy) DO UPDATE SET last = last + 1`,
+      params: [fy, orderId, orderId],
+    },
+    {
+      sql: `INSERT INTO credit_notes (number, order_id, invoice_no, reason, subtotal_paise, shipping_paise, tax_paise, total_paise, issued_at)
+            SELECT (SELECT 'CN/' || fy || '/' || printf('%06d', last) FROM credit_note_counters WHERE fy = ?),
+                   id, invoice_no, ?, subtotal_paise, shipping_paise, tax_paise, total_paise, ?
+            FROM orders WHERE id = ? AND ${eligible}`,
+      params: [fy, reason, now, orderId, orderId, orderId],
+    },
+  ]
+}
+
 // Stock model: checkout RESERVES stock (decrements immediately, atomically
 // — the `stock >= 0` CHECK constraint makes an oversell abort the whole
 // batch). Unpaid orders hold stock for HOLD_MINUTES, then the sweeper

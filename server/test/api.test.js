@@ -598,6 +598,40 @@ describe('GST invoices', () => {
     expect((await owner.get('/api/me/orders')).body.orders[0].invoiceNo).toMatch(/^CB\/\d{2}-\d{2}\/\d{6}$/)
   })
 
+  it('issues one credit note when an invoiced order is cancelled, and none for unpaid orders', async () => {
+    const { app, db } = setup({ ...SELLER, ADMIN_EMAILS: 'admin@example.com' })
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    const buyer = client(app)
+    const paid = await buyer.post('/api/checkout', checkoutBody())
+    await pay(buyer, paid)
+    const unpaid = await buyer.post('/api/checkout', checkoutBody([{ productId: 'dht11', qty: 1 }]))
+
+    await admin.post(`/api/admin/orders/${paid.body.orderId}/status`, { status: 'cancelled', note: 'Out of stock at the warehouse', notifyCustomer: false })
+    const fy = (await import('../src/lib/money.js')).financialYear()
+    const cn = await db.first('SELECT * FROM credit_notes WHERE order_id = ?', [paid.body.orderId])
+    const order = await db.first('SELECT * FROM orders WHERE id = ?', [paid.body.orderId])
+    expect(cn).toMatchObject({ number: `CN/${fy}/000001`, invoice_no: order.invoice_no, reason: 'Out of stock at the warehouse', total_paise: order.total_paise, tax_paise: order.tax_paise })
+
+    // The page shows the credit note, referencing the original invoice
+    const page = (await buyer.post('/api/orders/credit-note', { orderId: paid.body.orderId, contact: 'buyer@example.com' })).body
+    expect(page).toContain('Credit Note')
+    expect(page).toContain(`CN/${fy}/000001`)
+    expect(page).toContain(`Against invoice <strong>${order.invoice_no}</strong>`)
+    expect(page).toContain('Out of stock at the warehouse')
+
+    // Cancelling an unpaid (never invoiced) order issues nothing
+    await db.run(`UPDATE orders SET status = 'placed' WHERE id = ?`, [unpaid.body.orderId]) // pretend it reached fulfilment without payment
+    await admin.post(`/api/admin/orders/${unpaid.body.orderId}/status`, { status: 'cancelled', notifyCustomer: false })
+    expect((await db.first('SELECT COUNT(*) AS n FROM credit_notes')).n).toBe(1)
+    expect((await buyer.post('/api/orders/credit-note', { orderId: unpaid.body.orderId, contact: 'buyer@example.com' })).status).toBe(404)
+
+    // Order data carries the number for the UI; strangers can't fetch it
+    expect((await admin.get('/api/admin/orders')).body.orders.find((o) => o.id === paid.body.orderId).creditNoteNo).toBe(`CN/${fy}/000001`)
+    expect((await client(app).post('/api/orders/credit-note', { orderId: paid.body.orderId, contact: 'x@example.com' })).status).toBe(404)
+    expect((await admin.get(`/api/admin/orders/${paid.body.orderId}/credit-note`)).status).toBe(200)
+  })
+
   it('rejects delivery states that are not Indian states/UTs', async () => {
     const { app } = setup()
     const res = await client(app).post('/api/checkout', { ...checkoutBody(), address: { ...checkoutBody().address, state: 'Atlantis' } })

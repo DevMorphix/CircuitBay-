@@ -86,6 +86,7 @@ export const order = (o, items = [], events = []) => ({
   trackingNumber: o.tracking_number,
   invoiceNo: o.invoice_no ?? null,
   invoicedAt: o.invoiced_at ?? null,
+  creditNoteNo: o.credit_note_no ?? null,
   items: items.map((i) => ({ productId: i.product_id, name: i.name, unitPrice: i.unit_price_paise / 100, qty: i.qty, hsnCode: i.hsn_code ?? null, gstRate: i.gst_rate ?? 18 })),
   events: events.map((e) => ({ status: e.status, note: e.note, at: e.created_at })),
 })
