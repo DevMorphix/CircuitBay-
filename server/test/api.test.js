@@ -512,16 +512,27 @@ describe('admin', () => {
   })
 
   it('accepts exactly what the admin article editor sends, and round-trips it', async () => {
-    const { toEditable, fromEditable, slugify } = await import('../../src/pages/admin/format.js')
-    // What a person types into the editor
+    const { slugify } = await import('../../src/pages/admin/format.js')
+    const { blocksToMarkdown, markdownToBlocks } = await import('../../src/lib/markdown.js')
+    // What a person types into the Markdown editor
     const typed = [
-      { type: 'p', text: 'The INA219 measures bus voltage and current.' },
-      { type: 'h2', text: 'Wiring it up' },
-      { type: 'list', text: 'Up to 26 V bus voltage\n\n I2C interface ' },
-      { type: 'table', text: 'Spec | Value\nBus voltage | 0–26 V\nInterface | I2C' },
-      { type: 'code', text: 'Wire.begin();' },
-    ]
-    const body = typed.filter((b) => b.text?.trim()).map(fromEditable)
+      'The INA219 measures bus voltage and current.',
+      '',
+      '## Wiring it up',
+      '',
+      '- Up to 26 V bus voltage',
+      '-  I2C interface ',
+      '',
+      '| Spec | Value |',
+      '| --- | --- |',
+      '| Bus voltage | 0–26 V |',
+      '| Interface | I2C |',
+      '',
+      '```',
+      'Wire.begin();',
+      '```',
+    ].join('\n')
+    const body = markdownToBlocks(typed)
     const slug = slugify('INA219 current sensor: a quick guide')
     expect(slug).toBe('ina219-current-sensor-a-quick-guide')
     const res = await admin.put(`/api/admin/articles/${slug}`, { title: 'INA219 current sensor: a quick guide', category: 'tutorials', body, status: 'published' })
@@ -530,8 +541,9 @@ describe('admin', () => {
     expect(loaded[1]).toEqual({ type: 'h2', id: 'wiring-it-up', text: 'Wiring it up' })
     expect(loaded[2]).toEqual({ type: 'list', items: ['Up to 26 V bus voltage', 'I2C interface'] })
     expect(loaded[3]).toEqual({ type: 'table', head: ['Spec', 'Value'], rows: [['Bus voltage', '0–26 V'], ['Interface', 'I2C']] })
-    // Loading it back into the editor gives the same text a person would edit
-    expect(loaded.map(toEditable)[3].text).toBe('Spec | Value\nBus voltage | 0–26 V\nInterface | I2C')
+    expect(loaded[4]).toEqual({ type: 'code', text: 'Wire.begin();' })
+    // Loading it back into the editor gives Markdown that saves to the same thing
+    expect(markdownToBlocks(blocksToMarkdown(loaded))).toEqual(loaded)
     expect((await customer.get(`/api/articles/${slug}`)).status).toBe(200)
   })
 
@@ -965,6 +977,86 @@ describe('response cache', () => {
     const hit = await app.request('/api/categories', { headers: { origin: 'http://localhost:5173' } })
     expect(hit.headers.get('x-cache')).toBe('HIT')
     expect(hit.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
+  })
+})
+
+describe('article markdown', () => {
+  it('converts every existing article to Markdown and back without changes', async () => {
+    const { blocksToMarkdown, markdownToBlocks } = await import('../../src/lib/markdown.js')
+    const { default: articles } = await import('../../src/content/data/articles.js')
+    for (const a of articles) expect(markdownToBlocks(blocksToMarkdown(a.body)), a.slug).toEqual(a.body)
+  })
+
+  it('parses headings, paragraphs, lists, tables, code, images and diagrams', async () => {
+    const { markdownToBlocks } = await import('../../src/lib/markdown.js')
+    const md = [
+      '# Wiring the **sensor**',
+      'First line',
+      'joins the paragraph.',
+      '',
+      '* one',
+      '* two',
+      '  continued',
+      '1. step',
+      '2) next',
+      '',
+      '| Pin | Goes to |',
+      '|:---|---:|',
+      '| VCC | 5V |',
+      '',
+      '```cpp',
+      'int x = 1;',
+      '',
+      '```',
+      '![Breadboard layout](https://media.example.com/a.webp)',
+      '![Wiring diagram]()',
+    ].join('\n')
+    expect(markdownToBlocks(md)).toEqual([
+      { type: 'h2', id: 'wiring-the-sensor', text: 'Wiring the **sensor**' },
+      { type: 'p', text: 'First line joins the paragraph.' },
+      { type: 'list', items: ['one', 'two continued'] },
+      { type: 'list', ordered: true, items: ['step', 'next'] },
+      { type: 'table', head: ['Pin', 'Goes to'], rows: [['VCC', '5V']] },
+      { type: 'code', text: 'int x = 1;\n' },
+      { type: 'image', text: 'Breadboard layout', src: 'https://media.example.com/a.webp' },
+      { type: 'diagram', text: 'Wiring diagram' },
+    ])
+  })
+
+  it('parses inline styles and drops unsafe links', async () => {
+    const { parseInline } = await import('../../src/lib/markdown.js')
+    expect(parseInline('Use **bold**, *it*, `pin 13` and [the shop](/shop) or [bad](javascript:alert(1))')).toEqual([
+      { type: 'text', text: 'Use ' },
+      { type: 'strong', text: 'bold' },
+      { type: 'text', text: ', ' },
+      { type: 'em', text: 'it' },
+      { type: 'text', text: ', ' },
+      { type: 'code', text: 'pin 13' },
+      { type: 'text', text: ' and ' },
+      { type: 'link', text: 'the shop', href: '/shop' },
+      { type: 'text', text: ' or ' },
+      { type: 'text', text: 'bad' },
+      { type: 'text', text: ')' },
+    ])
+    // snake_case names aren't italics
+    expect(parseInline('Set DHT_PIN and WIFI_SSID')).toEqual([{ type: 'text', text: 'Set DHT_PIN and WIFI_SSID' }])
+  })
+
+  it('the API accepts numbered lists and images, and rejects unsafe image sources', async () => {
+    const { app } = setup()
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    const base = { title: 'Markdown test', category: 'tutorials', status: 'draft' }
+    const ok = await admin.put('/api/admin/articles/md-test', {
+      ...base,
+      body: [
+        { type: 'list', ordered: true, items: ['a', 'b'] },
+        { type: 'image', text: 'Cap', src: 'https://x.test/a.png' },
+      ],
+    })
+    expect(ok.status).toBe(200)
+    const bad = await admin.put('/api/admin/articles/md-test', { ...base, body: [{ type: 'image', text: 'x', src: 'javascript:alert(1)' }] })
+    expect(bad.status).toBe(400)
   })
 })
 

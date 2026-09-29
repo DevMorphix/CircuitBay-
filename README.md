@@ -88,7 +88,7 @@ the API checks the role on every request).
 | Coupons | Create percent, rupees-off or free-shipping codes with a minimum order, dates and use limits; switch off any time; see paid orders and discount given per code |
 | Inbox | Contact messages and part requests, workshop requests (new → contacted → scheduled → closed), newsletter list + CSV export |
 | Projects | Review community submissions, edit, add a photo, publish/feature/reject |
-| Articles | Block editor (headings, paragraphs, lists, tables, code), cover image, drafts |
+| Articles | Markdown editor with a formatting toolbar, live preview and image upload (headings, **bold**/*italic*, links, bullet and numbered lists, tables, code, images, diagram placeholders); cover image, drafts |
 
 Checkout prices, stock and orders change immediately. Product, blog and
 project pages are prerendered, so after editing them click **Publish site

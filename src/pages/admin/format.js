@@ -31,17 +31,3 @@ export const btn = {
 }
 
 export const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80)
-
-// Editor state keeps list/table blocks as plain text for easy typing
-export const toEditable = (b) =>
-  b.type === 'list' ? { type: 'list', text: b.items.join('\n') } : b.type === 'table' ? { type: 'table', text: [b.head, ...b.rows].map((r) => r.join(' | ')).join('\n') } : { ...b }
-export const fromEditable = (b) => {
-  if (b.type === 'list') return { type: 'list', items: linesToList(b.text) }
-  if (b.type === 'table') {
-    const [head, ...rows] = linesToList(b.text).map((l) => l.split('|').map((c) => c.trim()))
-    return { type: 'table', head: head ?? [], rows }
-  }
-  if (b.type === 'h2') return { type: 'h2', id: slugify(b.text), text: b.text }
-  return { type: b.type, text: b.text }
-}
-

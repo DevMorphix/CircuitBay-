@@ -1,19 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { blogCategories } from '../../content/blogData.js'
 import { api, fieldErrors } from '../../lib/api.js'
 import { useApi } from '../../lib/useApi.js'
-import { dateTime, mediaUrl, btn, slugify, toEditable, fromEditable } from './format.js'
+import { blocksToMarkdown, markdownToBlocks } from '../../lib/markdown.js'
+import { ArticleBody } from '../../components/content/ArticleBody.jsx'
+import { dateTime, mediaUrl, btn, slugify } from './format.js'
 import { Empty, Field, LoadState, PageTitle, Panel, Pill, Uploader } from './ui.jsx'
-
-const BLOCK_TYPES = [
-  { type: 'h2', label: 'Heading' },
-  { type: 'p', label: 'Paragraph' },
-  { type: 'list', label: 'Bullet list' },
-  { type: 'table', label: 'Table' },
-  { type: 'code', label: 'Code' },
-  { type: 'diagram', label: 'Diagram / image caption' },
-]
 const csv = (s) => s.split(',').map((x) => x.trim()).filter(Boolean)
 
 // ---------------------------------------------------------------- list --
@@ -65,20 +58,10 @@ export function ArticleEditor() {
 function ArticleForm({ article }) {
   const navigate = useNavigate()
   const isNew = !article
-  const [blocks, setBlocks] = useState(() => (article?.body ?? [{ type: 'p', text: '' }]).map(toEditable))
+  const [markdown, setMarkdown] = useState(() => blocksToMarkdown(article?.body ?? []))
   const [coverKey, setCoverKey] = useState(article?.coverKey ?? null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState({ error: '', fields: {}, saved: '' })
-
-  const update = (i, patch) => setBlocks((bs) => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)))
-  const move = (i, d) =>
-    setBlocks((bs) => {
-      const next = [...bs]
-      const j = i + d
-      if (j < 0 || j >= next.length) return bs
-      ;[next[i], next[j]] = [next[j], next[i]]
-      return next
-    })
 
   const submit = async (e) => {
     e.preventDefault()
@@ -89,7 +72,7 @@ function ArticleForm({ article }) {
       seoTitle: d.seoTitle || undefined,
       category: d.category,
       excerpt: d.excerpt || undefined,
-      body: blocks.filter((b) => b.text?.trim()).map(fromEditable),
+      body: markdownToBlocks(markdown),
       readTime: d.readTime ? Number(d.readTime) : undefined,
       author: d.author || undefined,
       coverKey,
@@ -129,45 +112,7 @@ function ArticleForm({ article }) {
           </div>
         </Panel>
 
-        <Panel title="Body">
-          <ol className="grid gap-4">
-            {blocks.map((b, i) => (
-              <li key={i} className="rounded-xl border border-black/10 p-3">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <select aria-label={`Block ${i + 1} type`} className="field w-auto! py-1.5!" value={b.type} onChange={(e) => update(i, { type: e.target.value })}>
-                    {BLOCK_TYPES.map((t) => (
-                      <option key={t.type} value={t.type}>{t.label}</option>
-                    ))}
-                  </select>
-                  <div className="flex gap-3 text-xs">
-                    <button type="button" className={btn.link} onClick={() => move(i, -1)} disabled={i === 0}>↑ Up</button>
-                    <button type="button" className={btn.link} onClick={() => move(i, 1)} disabled={i === blocks.length - 1}>↓ Down</button>
-                    <button type="button" className="font-semibold text-ink-400 hover:text-navy-800" onClick={() => setBlocks((bs) => bs.filter((_, j) => j !== i))}>Delete</button>
-                  </div>
-                </div>
-                {b.type === 'h2' || b.type === 'diagram' ? (
-                  <input aria-label="Text" className="field" value={b.text ?? ''} onChange={(e) => update(i, { text: e.target.value })} />
-                ) : (
-                  <textarea
-                    aria-label="Text"
-                    rows={b.type === 'p' ? 4 : 6}
-                    className={`field ${b.type === 'code' ? 'font-mono text-xs' : ''}`}
-                    value={b.text ?? ''}
-                    onChange={(e) => update(i, { text: e.target.value })}
-                    placeholder={b.type === 'list' ? 'One item per line' : b.type === 'table' ? 'Header | Header\nCell | Cell' : ''}
-                  />
-                )}
-              </li>
-            ))}
-          </ol>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {BLOCK_TYPES.map((t) => (
-              <button key={t.type} type="button" className={btn.secondary} onClick={() => setBlocks((bs) => [...bs, { type: t.type, text: '' }])}>
-                + {t.label}
-              </button>
-            ))}
-          </div>
-        </Panel>
+        <MarkdownEditor value={markdown} onChange={setMarkdown} error={msg.fields.body} />
       </div>
 
       <div className="grid content-start gap-5">
@@ -218,5 +163,159 @@ function ArticleForm({ article }) {
         </div>
       </div>
     </form>
+  )
+}
+
+// ------------------------------------------------------ markdown editor --
+const HELP = [
+  ['## Heading', 'Section heading (listed in "On this page")'],
+  ['**bold**  *italic*  `code`', 'Inline styles'],
+  ['[text](https://…)  [text](/shop)', 'Links (site paths or web addresses)'],
+  ['- item   /   1. item', 'Bullet or numbered list'],
+  ['| A | B |\n|---|---|\n| 1 | 2 |', 'Table (first column is the row label)'],
+  ['```\ncode\n```', 'Code block'],
+  ['![Caption](https://…)', 'Image with caption (use Upload image)'],
+  ['![Caption]()', 'Diagram placeholder, no image yet'],
+]
+
+// [button label, title, [editor action, …args]]
+const TOOLS = [
+  ['H2', 'Heading', ['lines', '##', 'Heading']],
+  ['B', 'Bold', ['wrap', '**', 'bold text']],
+  ['I', 'Italic', ['wrap', '*', 'italic text']],
+  ['</>', 'Inline code', ['wrap', '`', 'code']],
+  ['Link', 'Link', ['link']],
+  ['• List', 'Bullet list', ['lines', '-', 'Item']],
+  ['1. List', 'Numbered list', ['lines', '1.', 'Step']],
+  ['Table', 'Table', ['block', '| Column | Column |\n| --- | --- |\n| Row | Value |', 2, 8]],
+  ['Code', 'Code block', ['block', '```\ncode here\n```', 4, 13]],
+  ['Diagram', 'Diagram placeholder', ['block', '![Diagram caption]()', 2, 17]],
+]
+
+function MarkdownEditor({ value, onChange, error }) {
+  const ref = useRef(null)
+  const [tab, setTab] = useState('write')
+  const blocks = tab === 'preview' ? markdownToBlocks(value) : null
+  const words = value.trim() ? value.trim().split(/\s+/).length : 0
+
+  // Replace the selection (or insert at the cursor), then restore focus
+  // and select the part the author will want to type over
+  const edit = (fn) => {
+    const el = ref.current
+    const { selectionStart: a, selectionEnd: b } = el
+    const { text, select = [0, 0] } = fn(value.slice(a, b), value.slice(0, a))
+    onChange(value.slice(0, a) + text + value.slice(b))
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(a + select[0], a + select[1])
+    })
+  }
+  const wrap = (mark, placeholder) => () =>
+    edit((sel) => {
+      const inner = sel || placeholder
+      return { text: `${mark}${inner}${mark}`, select: [mark.length, mark.length + inner.length] }
+    })
+  // Starts every selected line with `prefix` ('1.' numbers them)
+  const lines = (prefix, placeholder) => () =>
+    edit((sel, before) => {
+      const lead = before && !before.endsWith('\n') ? '\n' : ''
+      const body = (sel || placeholder)
+        .split('\n')
+        .map((l, i) => `${prefix === '1.' ? `${i + 1}.` : prefix} ${l.replace(/^(#{1,6}|[-*+]|\d+[.)])\s+/, '')}`)
+        .join('\n')
+      return { text: lead + body, select: [lead.length, lead.length + body.length] }
+    })
+  // Inserts a block on its own, separated by a blank line
+  const block = (snippet, from = 0, to = 0) => () =>
+    edit((sel, before) => {
+      const lead = !before || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'
+      return { text: `${lead}${snippet}\n`, select: [lead.length + from, lead.length + to] }
+    })
+  const link = () =>
+    edit((sel) => {
+      const label = sel || 'link text'
+      return { text: `[${label}](https://)`, select: [label.length + 3, label.length + 11] }
+    })
+  const insertImage = (uploaded) => block(`![Describe the image](${mediaUrl(uploaded[0].key)})`, 2, 22)()
+
+  const actions = { lines, wrap, block, link: () => link }
+  const run = ([kind, ...args]) => actions[kind](...args)()
+
+  return (
+    <Panel
+      title="Body (Markdown)"
+      action={
+        <div role="tablist" aria-label="Editor view" className="flex rounded-xl bg-surface-soft p-1 text-sm font-semibold">
+          {['write', 'preview'].map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`rounded-lg px-3 py-1 capitalize ${tab === t ? 'bg-white text-ink-900 shadow-sm' : 'text-ink-600'}`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      {tab === 'write' ? (
+        <>
+          <div className="mb-2 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="Formatting">
+            {TOOLS.map(([label, title, action]) => (
+              <button
+                key={title}
+                type="button"
+                title={title}
+                aria-label={title}
+                onClick={() => run(action)}
+                className="rounded-lg border border-black/10 bg-white px-2.5 py-1 text-xs font-semibold text-ink-900 hover:border-brand-600 hover:text-brand-700"
+              >
+                {label}
+              </button>
+            ))}
+            <Uploader folder="articles" label="Upload image" onUploaded={insertImage} />
+          </div>
+          <textarea
+            ref={ref}
+            aria-label="Article body in Markdown"
+            aria-invalid={Boolean(error)}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            rows={24}
+            spellCheck
+            placeholder={'## First section\n\nWrite a paragraph here. Use **bold**, *italic* and [links](/shop).\n\n- A bullet point\n- Another one'}
+            className="field font-mono text-sm leading-relaxed"
+          />
+          <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-ink-400">
+            <span>
+              {words} words · about {Math.max(1, Math.round(words / 200))} min read
+            </span>
+            {error && <span className="font-medium text-navy-800">{error}</span>}
+          </div>
+          <details className="mt-3 rounded-xl bg-surface-soft p-3 text-sm">
+            <summary className="cursor-pointer font-semibold text-ink-900">Markdown cheat sheet</summary>
+            <table className="mt-3 w-full text-left text-xs">
+              <tbody className="divide-y divide-black/5">
+                {HELP.map(([md, what]) => (
+                  <tr key={what}>
+                    <td className="py-1.5 pr-4 align-top">
+                      <code className="whitespace-pre font-mono text-ink-900">{md}</code>
+                    </td>
+                    <td className="py-1.5 text-ink-600">{what}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        </>
+      ) : (
+        <div className="min-h-[300px] rounded-xl border border-black/5 bg-white p-2 sm:p-4">
+          {blocks.length ? <ArticleBody blocks={blocks} /> : <Empty>Nothing to preview yet.</Empty>}
+        </div>
+      )}
+    </Panel>
   )
 }

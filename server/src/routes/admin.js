@@ -480,8 +480,10 @@ const articleIn = z.object({
   body: z
     .array(
       z.discriminatedUnion('type', [
-        z.object({ type: z.enum(['h2', 'p', 'code', 'diagram', 'image']), text: z.string().max(20000), id: z.string().max(80).optional() }),
-        z.object({ type: z.literal('list'), items: z.array(z.string().max(2000)).min(1).max(50) }),
+        z.object({ type: z.enum(['h2', 'p', 'code', 'diagram']), text: z.string().max(20000), id: z.string().max(80).optional() }),
+        // src: a web address or an on-site path (the renderer rejects anything else)
+        z.object({ type: z.literal('image'), text: z.string().max(500).default(''), src: z.string().max(1000).regex(/^(https?:\/\/|\/(?!\/))/, 'Use a web address for the image.') }),
+        z.object({ type: z.literal('list'), ordered: z.boolean().optional(), items: z.array(z.string().max(2000)).min(1).max(50) }),
         z.object({ type: z.literal('table'), head: z.array(z.string().max(200)).min(1).max(8), rows: z.array(z.array(z.string().max(500)).max(8)).min(1).max(60) }),
       ]),
     )
