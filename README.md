@@ -34,8 +34,15 @@ prerendered to HTML with its own title, description, canonical and structured
 data, along with `sitemap.xml`, `404.html` and Cloudflare Pages routing. The
 build fails if any page breaks the SEO checks.
 
-- **Frontend:** set `VITE_API_URL` to the API's public URL (see
-  `.env.example`), then deploy `dist/` to Cloudflare Pages.
+- **Frontend:** deploy `dist/` to Cloudflare Pages with these build settings
+  (see `.env.example`):
+  - `VITE_API_URL`: the API's public URL, used by the browser
+  - `CONTENT_API_URL`: the same URL. The build pulls the live catalog
+    (products, articles, projects) from it before prerendering, so the pages
+    match what the team edits in `/admin`.
+
+  Create a **deploy hook** for the Pages project and set it as the API secret
+  `SITE_DEPLOY_HOOK_URL`. The admin "Publish site changes" button uses it.
 - **API:** see `server/README.md` (Cloudflare Workers + D1 + R2, Razorpay,
   Resend, MSG91).
 
@@ -56,11 +63,14 @@ checks, and the API test suite on every push.
                └─ Cron (10 min)  release unpaid stock holds, cleanup
 ```
 
-What the site uses the API for: sign-in (email/password or phone OTP),
+Product, blog and project pages are prerendered from the API catalog at build
+time (`scripts/pull-content.js` writes `src/content/data/`). The committed data
+files are the seed used when no API is configured, and they also seed the API.
+
+At runtime the site uses the API for sign-in (email/password or phone OTP),
 checkout with Razorpay, order tracking, the account area (orders, addresses,
 wishlist, profile), live stock, and every form (contact, workshop requests,
-newsletter, project submissions, part requests). Product and article pages
-are built from `src/content/*.js`, the same data used to seed the API.
+newsletter, project submissions, part requests).
 
 ## Admin
 
@@ -77,9 +87,10 @@ the API checks the role on every request).
 | Projects | Review community submissions, edit, add a photo, publish/feature/reject |
 | Articles | Block editor (headings, paragraphs, lists, tables, code), cover image, drafts |
 
-Checkout prices, stock and order data change immediately. Product pages, the
-blog and the projects page are still built from `src/content/*.js`, so
-catalog/content edits appear on those pages after that switch is made.
+Checkout prices, stock and orders change immediately. Product, blog and
+project pages are prerendered, so after editing them click **Publish site
+changes** in the admin sidebar. The site rebuilds from the API in about two
+minutes.
 
 ## Roadmap
 
@@ -90,7 +101,7 @@ placeholder that needs real client input.
 ### Code
 
 - [x] Admin dashboard (`/admin`)
-- [ ] Build product, blog and project pages from the API catalog (so admin edits reach the site) + "Publish site changes" button
+- [x] Build product, blog and project pages from the API catalog (so admin edits reach the site) + "Publish site changes" button
 - [ ] GST tax invoices for every order
 - [ ] Refunds sent from admin through Razorpay's API (today: refund in the Razorpay dashboard, then record it in admin)
 - [ ] Error monitoring (Sentry) + analytics ID

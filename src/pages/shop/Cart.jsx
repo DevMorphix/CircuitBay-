@@ -37,7 +37,7 @@ export function Cart() {
               {items.map(({ id, qty, product }) => (
                 <li key={id} className="flex gap-4 p-5">
                   <Link to={`/shop/product/${id}`} className="shrink-0">
-                    <Photo label="" className="h-20 w-20 rounded-lg sm:h-24 sm:w-24" />
+                    <Photo src={product.images?.[0]} label="" className="h-20 w-20 rounded-lg sm:h-24 sm:w-24" />
                   </Link>
                   <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>

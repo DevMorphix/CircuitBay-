@@ -86,6 +86,7 @@ function ArticleForm({ article }) {
     const slug = article?.slug ?? slugify(d.slug || d.title)
     const payload = {
       title: d.title,
+      seoTitle: d.seoTitle || undefined,
       category: d.category,
       excerpt: d.excerpt || undefined,
       body: blocks.filter((b) => b.text?.trim()).map(fromEditable),
@@ -101,8 +102,7 @@ function ArticleForm({ article }) {
     setMsg({ error: '', fields: {}, saved: '' })
     try {
       await api.put(`/admin/articles/${slug}`, payload)
-      // TODO: once blog pages are built from the API, this goes live on the next build automatically
-      setMsg({ error: '', fields: {}, saved: payload.status === 'published' ? 'Published. It appears on the blog after the next site build.' : 'Draft saved.' })
+      setMsg({ error: '', fields: {}, saved: payload.status === 'published' ? 'Saved as published — click “Publish site changes” to put it on the blog.' : 'Draft saved.' })
       if (isNew) navigate(`/admin/articles/${slug}`, { replace: true })
     } catch (err) {
       setMsg({ error: err.message, fields: fieldErrors(err), saved: '' })
@@ -122,7 +122,8 @@ function ArticleForm({ article }) {
       <div className="grid content-start gap-5">
         <Panel title="Article">
           <div className="grid gap-4">
-            <Field label="Title" id="a-title" name="title" required defaultValue={article?.title} error={msg.fields.title} />
+            <Field label="Title (the headline on the page)" id="a-title" name="title" required defaultValue={article?.title} error={msg.fields.title} />
+            <Field label="Search title (optional, ≤ 52 characters)" id="a-seo" name="seoTitle" maxLength={52} defaultValue={article?.seoTitle ?? ''} hint="Shown in Google and browser tabs, followed by ' | CircuitBay'. Leave empty to use the headline." error={msg.fields.seoTitle} />
             {isNew && <Field label="URL slug (optional)" id="a-slug" name="slug" placeholder="made from the title if empty" hint="/blog/<slug> — can't be changed after the first save." />}
             <Field as="textarea" rows={2} label="Excerpt (search snippet + card text, ≤ 160 characters works best)" id="a-excerpt" name="excerpt" maxLength={400} defaultValue={article?.excerpt ?? ''} />
           </div>

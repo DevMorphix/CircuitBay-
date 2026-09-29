@@ -21,6 +21,9 @@ const schema = z
     COOKIE_DOMAIN: z.string().optional(), // e.g. .circuitbay.in
     SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
     ADMIN_EMAILS: csv, // accounts with these emails become admins
+    // Cloudflare Pages deploy hook: rebuilds the site (which pulls the latest
+    // catalog from this API) when an admin clicks 'Publish site changes'
+    SITE_DEPLOY_HOOK_URL: z.string().url().optional(),
 
     PAYMENTS_PROVIDER: z.enum(['razorpay', 'fake']).default('fake'),
     RAZORPAY_KEY_ID: z.string().optional(),

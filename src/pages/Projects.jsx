@@ -11,11 +11,12 @@ import { useSubmit } from '../lib/useSubmit.js'
 import { FieldError, FormError, FormSent, Honeypot } from '../components/ui/FormBits.jsx'
 import { schema } from '../lib/seo.js'
 
-// D3 — curated grid from the community site, editor's-pick spotlight,
-// "Submit yours" CTA. TODO_CLIENT: pull from the community site API.
+// D3 — published community projects (managed in /admin/projects), with the
+// project marked "Featured" as the editor's pick, and a "Submit yours" form.
 export function Projects() {
-  const [pick, ...rest] = projects
-  const filters = ['All', ...new Set(projects.map((p) => p.category))]
+  const pick = projects.find((p) => p.featured) ?? projects[0]
+  const rest = projects.filter((p) => p !== pick)
+  const filters = ['All', ...new Set(projects.map((p) => p.category).filter(Boolean))]
   const [filter, setFilter] = useState('All')
   const shown = rest.filter((p) => filter === 'All' || p.category === filter)
 
@@ -34,11 +35,12 @@ export function Projects() {
         subtitle="Real builds from students, hobbyists and classrooms across the bay."
       />
 
+      {pick && (
       <Section tone="light" eyebrow="EDITOR'S PICK">
         <Reveal className="card grid overflow-hidden lg:grid-cols-2">
-          <Photo label={`${pick.title} — build photo`} className="aspect-[16/10] lg:aspect-auto" />
+          <Photo src={pick.image} label={`${pick.title} — build photo`} className="aspect-[16/10] lg:aspect-auto" />
           <div className="p-8 sm:p-10">
-            <span className="chip">{pick.category}</span>
+            {pick.category && <span className="chip">{pick.category}</span>}
             <h2 className="mt-4 font-heading text-3xl font-semibold text-ink-900 sm:text-4xl">{pick.title}</h2>
             <p className="mt-4 text-lg leading-relaxed text-ink-600">{pick.blurb}</p>
             <ul className="mt-6 flex flex-wrap gap-2">
@@ -56,6 +58,7 @@ export function Projects() {
           </div>
         </Reveal>
       </Section>
+      )}
 
       <Section tone="soft" title="More from the bay">
         <div className="mb-8 flex flex-wrap gap-2" role="group" aria-label="Filter by category">

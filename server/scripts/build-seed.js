@@ -60,6 +60,7 @@ for (const a of articles) {
     insert('articles', {
       slug: a.slug,
       title: a.title,
+      seo_title: a.seoTitle ?? null,
       category: a.category,
       excerpt: a.excerpt,
       body: a.body ?? [],

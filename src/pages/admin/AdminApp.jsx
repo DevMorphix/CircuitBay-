@@ -4,6 +4,7 @@ import { Seo } from '../../components/seo/Seo.jsx'
 import { Logo } from '../../components/layout/Logo.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { api } from '../../lib/api.js'
 import { Dashboard } from './Dashboard.jsx'
 
 const section = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })))
@@ -24,6 +25,36 @@ const NAV = [
   { to: '/admin/projects', label: 'Projects', icon: 'users' },
   { to: '/admin/articles', label: 'Articles', icon: 'book' },
 ]
+
+// Product, blog and project pages are prerendered from the API; this starts
+// a new site build so edits go live (Cloudflare Pages deploy hook).
+function PublishButton() {
+  const [state, setState] = useState({ status: 'idle', message: '' })
+  const publish = async () => {
+    setState({ status: 'busy', message: '' })
+    try {
+      await api.post('/admin/site/rebuild')
+      setState({ status: 'done', message: 'Publishing — the site updates in about 2 minutes.' })
+    } catch (err) {
+      setState({ status: 'error', message: err.message })
+    }
+  }
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={publish}
+        disabled={state.status === 'busy'}
+        className="w-full rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+      >
+        {state.status === 'busy' ? 'Starting…' : 'Publish site changes'}
+      </button>
+      <p className="mt-2 text-xs text-white/60">
+        {state.message || 'Updates product, blog and project pages with your latest edits.'}
+      </p>
+    </div>
+  )
+}
 
 // /admin/* — CircuitBay back office. Only accounts with role "admin"
 // (emails listed in the API's ADMIN_EMAILS) can use it; the API enforces
@@ -78,7 +109,8 @@ export function AdminApp() {
               </ul>
             </nav>
             <div className={`${menuOpen ? 'block' : 'hidden'} mt-6 border-t border-white/10 pt-4 text-sm lg:block`}>
-              <p className="truncate text-white/70">{user.email ?? user.phone}</p>
+              <PublishButton />
+              <p className="mt-4 truncate text-white/70">{user.email ?? user.phone}</p>
               <div className="mt-2 flex gap-4">
                 <Link to="/" className="font-semibold text-brand-300 hover:text-white">View site</Link>
                 <button type="button" onClick={logout} className="font-semibold text-brand-300 hover:text-white">Sign out</button>

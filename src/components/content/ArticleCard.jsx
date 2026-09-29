@@ -9,8 +9,9 @@ export function ArticleCard({ article, featured = false }) {
       className={`flex h-full overflow-hidden ${featured ? 'flex-col md:flex-row' : 'flex-col'}`}
     >
       <Photo
-        label="Cover image"
-        className={featured ? 'aspect-[16/10] md:aspect-auto md:w-1/2' : 'aspect-[16/9]'}
+        src={article.cover}
+        label={`${article.title} — cover image`}
+        className={featured ? 'aspect-[16/10] w-full md:aspect-auto md:w-1/2' : 'aspect-[16/9] w-full'}
       />
       <div className={`flex flex-1 flex-col ${featured ? 'p-8 md:p-10' : 'p-6'}`}>
         <span className="chip self-start">{categoryLabel(article.category)}</span>

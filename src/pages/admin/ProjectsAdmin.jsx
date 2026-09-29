@@ -19,7 +19,7 @@ export function ProjectsAdmin() {
 
   return (
     <>
-      <PageTitle title="Community projects" subtitle="Submissions from the site wait here until you publish them." />
+      <PageTitle title="Community projects" subtitle="Submissions wait here until you publish them. Then click “Publish site changes” to update the projects page." />
       <div className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button

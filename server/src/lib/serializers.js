@@ -36,11 +36,13 @@ export const product = (config) => (p) => ({
 export const article = (config, { withBody = false } = {}) => (a) => ({
   slug: a.slug,
   title: a.title,
+  seoTitle: a.seo_title ?? undefined,
   category: a.category,
   excerpt: a.excerpt,
   readTime: a.read_time,
   author: a.author,
   date: a.published_at ? new Date(a.published_at).toISOString().slice(0, 10) : null,
+  updated: a.updated_at ? new Date(a.updated_at).toISOString().slice(0, 10) : null,
   featured: Boolean(a.featured),
   cover: mediaUrl(config, a.cover_key),
   parts: parseJson(a.parts, []),

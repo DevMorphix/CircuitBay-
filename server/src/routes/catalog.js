@@ -28,6 +28,8 @@ const flag = z
   .transform((v) => (v == null ? undefined : v === 'true' || v === '1'))
 
 const SORTS = {
+  // Kits first, then A–Z (the site's default; no popularity data yet)
+  featured: 'is_kit DESC, name',
   popular: 'reviews_count DESC, name',
   'price-asc': 'price_paise ASC, name',
   'price-desc': 'price_paise DESC, name',
@@ -46,7 +48,7 @@ const listQuery = z.object({
   inStock: flag,
   kit: flag,
   ids: csv,
-  sort: z.enum(Object.keys(SORTS)).default('popular'),
+  sort: z.enum(Object.keys(SORTS)).default('featured'),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(48).default(12),
 })

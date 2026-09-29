@@ -60,7 +60,7 @@ export function ProductCard({ product }) {
     <article className="card card-hover group flex h-full flex-col overflow-hidden">
       <Link to={`/shop/product/${product.id}`} className="flex flex-1 flex-col">
         <div className="relative">
-          <Photo label={product.name} className="aspect-square" />
+          <Photo src={product.images?.[0]} label={product.name} className="aspect-square w-full" />
           <div className="absolute left-3 top-3">
             <Badges badges={product.badges} />
           </div>

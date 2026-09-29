@@ -446,6 +446,13 @@ describe('admin', () => {
     expect((await customer.get(`/api/articles/${slug}`)).status).toBe(200)
   })
 
+  it('explains when site publishing is not configured', async () => {
+    const res = await admin.post('/api/admin/site/rebuild', {})
+    expect(res.status).toBe(501)
+    expect(res.body.error.message).toMatch(/SITE_DEPLOY_HOOK_URL/)
+    expect((await customer.post('/api/admin/site/rebuild', {})).status).toBe(403)
+  })
+
   it('returns raw image keys to the product editor', async () => {
     const list = await admin.get('/api/admin/products?q=esp32-devkit')
     expect(list.body.products[0]).toMatchObject({ id: 'esp32-devkit', imageKeys: [], datasheetKey: null })
@@ -513,6 +520,46 @@ describe('stock under concurrency', () => {
     const res = await client(app).post('/api/checkout', checkoutBody([{ productId: 'line-follower-kit', qty: 2 }]))
     expect(res.status).toBe(502)
     expect((await db.first(`SELECT stock FROM products WHERE id = 'line-follower-kit'`)).stock).toBe(4)
+  })
+})
+
+describe('site publishing', () => {
+  it('calls the deploy hook when configured', async () => {
+    const calls = []
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), method: init?.method })
+      return new Response('{"success":true}', { status: 200 })
+    }
+    try {
+      const { app } = setup({ SITE_DEPLOY_HOOK_URL: 'https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/test' })
+      const admin = client(app)
+      await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+      const res = await admin.post('/api/admin/site/rebuild', {})
+      expect(res.status).toBe(200)
+      expect(calls).toEqual([{ url: 'https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/test', method: 'POST' }])
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+})
+
+describe('catalog for the site build', () => {
+  it('lists every product kits-first by default, with the fields the pages need', async () => {
+    const { app } = setup()
+    const res = await client(app).get('/api/products?category=all&limit=48')
+    expect(res.body.total).toBe(17)
+    expect(res.body.products.slice(0, 4).every((p) => p.kit)).toBe(true)
+    expect(Object.keys(res.body.products[0])).toEqual(expect.arrayContaining(['id', 'name', 'price', 'stock', 'badges', 'specs', 'images', 'inside']))
+  })
+
+  it('returns article SEO titles and body for prerendering', async () => {
+    const { app } = setup()
+    const a = (await client(app).get('/api/articles/which-sensor-for-obstacle-detection')).body.article
+    expect(a.seoTitle).toBe('Ultrasonic vs IR vs ToF: Obstacle Sensors Compared')
+    expect(a.body.some((b) => b.type === 'table')).toBe(true)
+    // Drafts are not published
+    expect((await client(app).get('/api/articles/airloo-build-log')).status).toBe(404)
   })
 })
 

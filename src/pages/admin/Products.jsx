@@ -281,8 +281,7 @@ function ProductForm({ product, categories }) {
 
         <div className="card sticky bottom-4 grid gap-3 p-4">
           {err.message && <p role="alert" className="text-sm font-medium text-navy-800">{err.message}</p>}
-          {/* TODO: once product pages are built from the API, pages refresh on the next site build */}
-          {saved && <p role="status" className="text-sm font-medium text-brand-700">Saved. Checkout prices and stock use this immediately; product pages update on the next site build.</p>}
+          {saved && <p role="status" className="text-sm font-medium text-brand-700">Saved. Checkout and stock use this now — click “Publish site changes” to update the product pages.</p>}
           <div className="flex flex-wrap gap-3">
             <button type="submit" disabled={busy} className={btn.primary}>
               {busy ? 'Saving…' : isNew ? 'Create product' : 'Save changes'}

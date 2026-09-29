@@ -37,6 +37,7 @@ function ProductView({ product }) {
   const { add } = useCart()
   const navigate = useNavigate()
   const category = shopCategories.find((c) => c.slug === product.category)
+  const images = product.images ?? []
 
   // Live stock from the API's uncached /stock endpoint once hydrated (the
   // prerendered page shows the catalog value; checkout re-checks on the
@@ -77,6 +78,7 @@ function ProductView({ product }) {
         description: `${product.forWhat} ${formatPrice(product.price)} with tracked delivery across India and student-friendly support.`.slice(0, 160),
         path: `/shop/product/${product.id}`,
         type: 'product',
+        image: product.images?.[0],
         jsonLd: [
           schema.product(product),
           schema.breadcrumbs([
@@ -99,21 +101,23 @@ function ProductView({ product }) {
 
           <div className="grid gap-10 lg:grid-cols-2 lg:gap-14">
             <div>
-              <Photo label={`${product.name} — view ${image + 1}`} className="aspect-square rounded-2xl" />
-              <div className="mt-3 grid grid-cols-4 gap-3">
-                {[0, 1, 2, 3].map((i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setImage(i)}
-                    aria-label={`Show image ${i + 1}`}
-                    aria-pressed={image === i}
-                    className={`overflow-hidden rounded-xl border-2 ${image === i ? 'border-brand-500' : 'border-transparent'}`}
-                  >
-                    <Photo label={String(i + 1)} className="aspect-square" />
-                  </button>
-                ))}
-              </div>
+              <Photo src={images[image]} eager label={`${product.name} — photo ${image + 1}`} className="aspect-square w-full rounded-2xl" />
+              {images.length > 1 && (
+                <div className="mt-3 grid grid-cols-4 gap-3">
+                  {images.map((src, i) => (
+                    <button
+                      key={src}
+                      type="button"
+                      onClick={() => setImage(i)}
+                      aria-label={`Show photo ${i + 1}`}
+                      aria-pressed={image === i}
+                      className={`overflow-hidden rounded-xl border-2 ${image === i ? 'border-brand-600' : 'border-transparent'}`}
+                    >
+                      <Photo src={src} label="" className="aspect-square w-full" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

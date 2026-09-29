@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && vite build --ssr src/entry-server.jsx --outDir dist-ssr && node scripts/prerender.js",
+    "build": "node scripts/pull-content.js && vite build && vite build --ssr src/entry-server.jsx --outDir dist-ssr && node scripts/prerender.js",
     "lint": "oxlint",
     "preview": "vite preview",
-    "build:spa": "vite build"
+    "build:spa": "vite build",
+    "content:pull": "node scripts/pull-content.js"
   },
   "dependencies": {
     "framer-motion": "^13.4.0",

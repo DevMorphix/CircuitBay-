@@ -4,9 +4,9 @@ import { Card, Photo } from '../ui/Card.jsx'
 export function ProjectCard({ project, large = false }) {
   return (
     <Card className="flex h-full flex-col overflow-hidden">
-      <Photo label={`${project.title} — build photo`} className={large ? 'aspect-[16/10]' : 'aspect-[4/3]'} />
+      <Photo src={project.image} label={`${project.title} — build photo`} className={`w-full ${large ? 'aspect-[16/10]' : 'aspect-[4/3]'}`} />
       <div className="flex flex-1 flex-col p-6">
-        <span className="chip self-start">{project.category}</span>
+        {project.category && <span className="chip self-start">{project.category}</span>}
         <h3 className={`mt-3 font-heading font-semibold text-ink-900 ${large ? 'text-2xl' : 'text-lg'}`}>
           {project.title}
         </h3>

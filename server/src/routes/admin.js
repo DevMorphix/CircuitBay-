@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { body, query } from '../middleware/validate.js'
 import { requireAdmin } from '../middleware/auth.js'
+import { limitByIp } from '../middleware/rateLimit.js'
 import { json, parseJson } from '../db/index.js'
 import { randomId } from '../lib/crypto.js'
-import { badRequest, conflict, notFound } from '../lib/errors.js'
+import { HttpError, badRequest, conflict, notFound } from '../lib/errors.js'
 import { rupeesToPaise } from '../lib/money.js'
 import { article, mediaUrl, order as serializeOrder, product, project } from '../lib/serializers.js'
 import * as s from '../lib/schemas.js'
@@ -239,6 +240,19 @@ admin.post('/orders/:id/refunded', body(z.object({ note: z.string().trim().max(3
   return c.json({ ok: true })
 })
 
+// ------------------------------------------------------ publish the site --
+// Product, blog and project pages are prerendered from this API at build
+// time; this starts a new build so admin edits go live (~1–2 minutes).
+admin.post('/site/rebuild', limitByIp('site-rebuild', { limit: 12, windowSec: 3600 }), async (c) => {
+  const { config } = c.var.svc
+  if (!config.SITE_DEPLOY_HOOK_URL) {
+    throw new HttpError(501, 'not_configured', "Publishing isn't set up yet: add SITE_DEPLOY_HOOK_URL (a Cloudflare Pages deploy hook) to the API settings.")
+  }
+  const res = await fetch(config.SITE_DEPLOY_HOOK_URL, { method: 'POST' })
+  if (!res.ok) throw new HttpError(502, 'deploy_failed', `The site build couldn't be started (HTTP ${res.status}). Try again in a minute.`)
+  return c.json({ ok: true, startedAt: Date.now() })
+})
+
 // ---------------------------------------------------------- inbound/CRM --
 const inboxList = (table) => async (c) => {
   const { status, page: pg, limit } = c.req.valid('query')
@@ -302,6 +316,7 @@ admin.patch(
 // ------------------------------------------------------------- articles --
 const articleIn = z.object({
   title: z.string().trim().min(2).max(200),
+  seoTitle: z.string().trim().max(60).optional(),
   category: z.string().trim().min(1).max(60),
   excerpt: z.string().trim().max(400).optional(),
   // Same block types the site renders (src/pages/Article.jsx)
@@ -346,13 +361,13 @@ admin.put('/articles/:slug', body(articleIn), async (c) => {
   const existing = await db.first('SELECT published_at FROM articles WHERE slug = ?', [slug])
   const publishedAt = d.status === 'published' ? (d.publishedAt ?? existing?.published_at ?? now) : (d.publishedAt ?? null)
   await db.run(
-    `INSERT INTO articles (slug, title, category, excerpt, body, read_time, author, cover_key, featured, parts, related_projects, status, published_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(slug) DO UPDATE SET title = excluded.title, category = excluded.category, excerpt = excluded.excerpt,
+    `INSERT INTO articles (slug, title, seo_title, category, excerpt, body, read_time, author, cover_key, featured, parts, related_projects, status, published_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(slug) DO UPDATE SET title = excluded.title, seo_title = excluded.seo_title, category = excluded.category, excerpt = excluded.excerpt,
        body = excluded.body, read_time = excluded.read_time, author = excluded.author, cover_key = excluded.cover_key,
        featured = excluded.featured, parts = excluded.parts, related_projects = excluded.related_projects,
        status = excluded.status, published_at = excluded.published_at, updated_at = excluded.updated_at`,
-    [slug, d.title, d.category, d.excerpt, json(d.body), d.readTime, d.author, d.coverKey ?? null, d.featured ? 1 : 0,
+    [slug, d.title, d.seoTitle || null, d.category, d.excerpt, json(d.body), d.readTime, d.author, d.coverKey ?? null, d.featured ? 1 : 0,
       json(d.parts), json(d.relatedProjects), d.status, publishedAt, now, now],
   )
   return c.json({ article: article(config, { withBody: true })(await db.first('SELECT * FROM articles WHERE slug = ?', [slug])) })

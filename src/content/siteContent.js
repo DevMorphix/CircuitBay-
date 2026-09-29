@@ -7,6 +7,8 @@
 // client (not just wordsmithing) are flagged `TODO_CLIENT` in a comment.
 // ---------------------------------------------------------------------------
 
+import projectsData from './data/projects.js'
+
 export const brand = {
   name: 'CircuitBay',
   tagline: 'Technology understood when built.',
@@ -140,57 +142,8 @@ export const educators = {
   ctaMore: { label: 'Lab setup & ATL packages', to: '/schools' },
 }
 
-// TODO_CLIENT: real photos, builder names and component tags
-export const projects = [
-  {
-    id: 'airloo',
-    title: 'AirLoo',
-    blurb: 'A smart washroom air-quality monitor that alerts staff before things get bad.',
-    tags: ['ESP32', 'MQ-135', 'IoT'],
-    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
-    category: 'IoT',
-  },
-  {
-    id: 'vazhikatti',
-    title: 'Vazhikatti',
-    blurb: 'An obstacle-sensing navigation aid that guides visually impaired users with haptic feedback.',
-    tags: ['Arduino', 'Ultrasonic', 'Haptics'],
-    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
-    category: 'Robotics',
-  },
-  {
-    id: 'smart-agriculture',
-    title: 'Smart Agriculture',
-    blurb: 'Soil-moisture sensing and automatic irrigation, reporting live to a phone dashboard.',
-    tags: ['ESP8266', 'Soil sensor', 'Relay'],
-    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
-    category: 'IoT',
-  },
-  {
-    id: 'line-follower',
-    title: 'Hallway Delivery Bot',
-    blurb: 'A line-following rover that carries notes between classrooms.',
-    tags: ['Arduino', 'IR array', 'L298N'],
-    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
-    category: 'Robotics',
-  },
-  {
-    id: 'wake-word',
-    title: 'Wake-word Desk Assistant',
-    blurb: 'On-device wake-word detection on a microcontroller — no cloud round-trip.',
-    tags: ['ESP32-S3', 'I2S mic', 'TinyML'],
-    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
-    category: 'AI',
-  },
-  {
-    id: 'weather-station',
-    title: 'Rooftop Weather Station',
-    blurb: 'Temperature, humidity and rainfall logged every minute from a school rooftop.',
-    tags: ['BME280', 'Rain gauge', 'ESP32'],
-    builder: null, // TODO_CLIENT: real builder name (the "Built by" line is hidden until set)
-    category: 'IoT',
-  },
-]
+// Community projects live in data/projects.js (pulled from the API at build time)
+export const projects = projectsData
 
 export const featuredProjects = {
   eyebrow: 'COMMUNITY',

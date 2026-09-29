@@ -21,7 +21,8 @@ binding = "BUCKET"
 bucket_name = "circuitbay-media"
 
 # Non-secret configuration. Secrets (RAZORPAY_KEY_SECRET,
-# RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY, MSG91_AUTH_KEY) are set with
+# RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY, MSG91_AUTH_KEY,
+# SITE_DEPLOY_HOOK_URL) are set with
 # `npx wrangler secret put NAME` — never commit them here.
 [vars]
 APP_ENV = "production"

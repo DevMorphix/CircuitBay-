@@ -35,6 +35,7 @@ export function Article() {
         description: article.excerpt,
         path,
         type: 'article',
+        image: article.cover,
         jsonLd: [
           schema.article(article, path),
           schema.breadcrumbs([{ name: 'Home', path: '/' }, { name: 'Blog', path: '/blog' }, { name: article.title, path }]),
@@ -66,7 +67,7 @@ export function Article() {
 
       <div className="section-light px-4 pb-20 sm:px-6">
         <div className="mx-auto max-w-6xl">
-          <Photo label={`${article.title} — cover image`} className="mx-auto aspect-[16/8] max-w-[960px] rounded-b-2xl" />
+          <Photo src={article.cover} eager label={`${article.title} — cover image`} className="mx-auto block aspect-[16/8] w-full max-w-[960px] rounded-b-2xl" />
 
           <div className="mx-auto mt-12 grid max-w-[1040px] gap-12 lg:grid-cols-[1fr_240px]">
             <article className="mx-auto w-full min-w-0 max-w-[720px]">
