@@ -47,6 +47,8 @@ const schema = z
     EMAIL_PROVIDER: z.enum(['console', 'resend']).default('console'),
     EMAIL_FROM: z.string().default('CircuitBay <hello@circuitbay.in>'),
     RESEND_API_KEY: z.string().optional(),
+    // Optional: keep a Resend audience in sync with the newsletter list
+    RESEND_AUDIENCE_ID: z.string().optional(),
 
     SMS_PROVIDER: z.enum(['console', 'msg91']).default('console'),
     MSG91_AUTH_KEY: z.string().optional(),

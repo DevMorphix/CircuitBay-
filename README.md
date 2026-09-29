@@ -108,7 +108,7 @@ placeholder that needs real client input.
 - [x] GST credit notes when an invoiced order is cancelled (automatic, own CN/ sequence, printable for customers and admins)
 - [x] Refunds sent from admin through Razorpay's API (one click, can't double-refund, customer emailed; failed refunds reopen via webhook)
 - [x] Error monitoring (Sentry for the site and API; friendly error screen) + analytics (GA4 e-commerce events, after consent)
-- [ ] Email polish: HTML templates, email verification, unsubscribe page, newsletter sync
+- [x] Email polish: branded HTML emails (with text versions), email confirmation on sign-up / email change, newsletter welcome + unsubscribe page + one-click unsubscribe, optional Resend audience sync
 - [ ] Coupons (the coupon box is on screen but not connected)
 - [ ] Reviews from verified buyers (so ratings can be shown honestly)
 - [ ] Courier integration (e.g. Shiprocket) for automatic tracking updates
@@ -130,7 +130,7 @@ placeholder that needs real client input.
 
 - [ ] Cloudflare: D1 database, R2 bucket, Workers Paid plan, Pages project, domains, www → apex redirect
 - [ ] Razorpay: KYC, test keys (verify the real payment window), live keys, webhook
-- [ ] Resend: verify the sending domain
+- [ ] Resend: verify the sending domain; optionally create an audience for the newsletter (`RESEND_AUDIENCE_ID`)
 - [ ] MSG91: DLT registration, sender ID, OTP template
 - [ ] Google: Search Console + sitemap, Analytics (GA4 ID → `VITE_GA_MEASUREMENT_ID`), Business Profile
 - [ ] Sentry: create a project; set `VITE_SENTRY_DSN` (site) and `SENTRY_DSN` (API secret), and add alert rules

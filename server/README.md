@@ -107,13 +107,13 @@ rupees, with `pricePaise` alongside.
 | Area | Endpoints |
 |---|---|
 | Health | `GET /api/health` |
-| Auth | `POST /api/auth/register`, `/login`, `/logout`, `GET /api/auth/me`, `POST /api/auth/otp/request`, `/otp/verify`, `/password/forgot`, `/password/reset`, `/password/change` |
+| Auth | `POST /api/auth/register`, `/login`, `/logout`, `GET /api/auth/me`, `POST /api/auth/otp/request`, `/otp/verify`, `/password/forgot`, `/password/reset`, `/password/change`, `/email/verify`, `/email/resend` |
 | Catalog | `GET /api/categories`, `GET /api/products?category=&q=&level=&brand=&type=&minPrice=&maxPrice=&inStock=&kit=&ids=&sort=&page=&limit=` (includes facets), `GET /api/products/:id` |
 | Content | `GET /api/articles?category=&q=&featured=&page=`, `GET /api/articles/:slug`, `GET /api/projects` |
 | Checkout | `POST /api/checkout` → Razorpay order, `POST /api/checkout/verify`, `POST /api/checkout/failed`, `POST /api/webhooks/razorpay` |
 | Orders | `GET /api/orders/track?orderId=&contact=` (guest), `GET /api/me/orders`, `GET /api/me/orders/:id` |
 | Account | `PATCH /api/me/profile`, `GET/POST/PUT/DELETE /api/me/addresses[/:id]`, `GET /api/me/wishlist`, `PUT/DELETE /api/me/wishlist/:productId` |
-| Forms | `POST /api/forms/contact`, `/workshop-requests`, `/newsletter`, `/newsletter/unsubscribe`, `/project-submissions` |
+| Forms | `POST /api/forms/contact`, `/workshop-requests`, `/newsletter`, `/newsletter/unsubscribe`, `/newsletter/one-click` (RFC 8058, mail apps), `/project-submissions` |
 | Admin | `GET /api/admin/stats`; products CRUD + stock; `PUT /api/admin/categories/:slug`; orders list/detail + `POST /orders/:id/status`; inbox lists; project moderation; articles CRUD; `POST /api/admin/uploads` (multipart) |
 | Media | `GET /media/<key>` |
 
@@ -201,6 +201,6 @@ sign-in rate, and caching keeps reads off it.
   `src/lib/money.js`.
 - Register the MSG91 DLT template and verify its variable name in
   `src/services/sms.js`.
-- Verify the sending domain in Resend, and add HTML email templates.
-- Wire the frontend to the API (it still uses mock data from
-  `src/content/*.js`).
+- Verify the sending domain in Resend. Optionally create a Resend audience
+  and set `RESEND_AUDIENCE_ID` (a `[vars]` entry) so newsletter sign-ups and
+  unsubscribes stay in sync with it for broadcasts.

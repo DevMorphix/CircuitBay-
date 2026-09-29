@@ -38,5 +38,6 @@ SMS_PROVIDER = "msg91"
 # MEDIA_PUBLIC_URL = "https://media.circuitbay.in"
 # RAZORPAY_KEY_ID = "rzp_live_xxx"
 # MSG91_OTP_TEMPLATE_ID = "xxx"
+# RESEND_AUDIENCE_ID = "xxx"   # optional: newsletter list → Resend audience
 
 # `wrangler dev` reads local overrides from .dev.vars (see .dev.vars.example)

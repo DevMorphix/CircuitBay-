@@ -6,6 +6,7 @@ import { randomId } from '../lib/crypto.js'
 import { conflict, notFound } from '../lib/errors.js'
 import { product } from '../lib/serializers.js'
 import * as s from '../lib/schemas.js'
+import { sendEmailVerification } from './auth.js'
 
 // Signed-in customer: profile, saved addresses, wishlist.
 // (Orders live in routes/orders.js under /me/orders.)
@@ -27,6 +28,7 @@ account.patch('/profile', body(z.object({ name: s.name.optional(), email: s.emai
        updated_at = ? WHERE id = ?`,
     [d.name, d.email, d.email, d.email, Date.now(), me.id],
   )
+  if (d.email && d.email !== me.email) await sendEmailVerification(c.var.svc, d.email)
   return c.json({ user: publicUser(await db.first('SELECT * FROM users WHERE id = ?', [me.id])) })
 })
 

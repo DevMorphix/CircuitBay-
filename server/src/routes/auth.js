@@ -11,6 +11,27 @@ import { emails } from '../services/email.js'
 const OTP_TTL_MS = 10 * 60_000
 const OTP_MAX_ATTEMPTS = 5
 const RESET_TTL_MS = 60 * 60_000
+const VERIFY_TTL_MS = 24 * 60 * 60_000
+
+// Email a "confirm your email" link. A new link replaces any earlier unused
+// one. Best effort: a failed send must not fail sign-up or a profile change.
+export async function sendEmailVerification(svc, email) {
+  const { db, email: mailer, config } = svc
+  const token = randomToken()
+  const now = Date.now()
+  try {
+    await db.batch([
+      { sql: `UPDATE verification_codes SET consumed_at = ? WHERE purpose = 'email_verify' AND target = ? AND consumed_at IS NULL`, params: [now, email] },
+      {
+        sql: `INSERT INTO verification_codes (id, purpose, target, code_hash, expires_at, created_at) VALUES (?, 'email_verify', ?, ?, ?, ?)`,
+        params: [randomId(16), email, await sha256Hex(token), now + VERIFY_TTL_MS, now],
+      },
+    ])
+    await mailer.send({ to: email, ...emails.verifyEmail(config.SITE_URL, token) })
+  } catch (err) {
+    console.error('verification email failed', err)
+  }
+}
 
 // Used so a login for an unknown email costs the same as a real one
 const DUMMY_HASH = 'pbkdf2$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
@@ -42,6 +63,7 @@ auth.post(
       [id, email, phone, await hashPassword(password), name, role, now, now],
     )
     await startSession(c, id)
+    await sendEmailVerification(c.var.svc, email)
     const user = await db.first('SELECT * FROM users WHERE id = ?', [id])
     return c.json({ user: publicUser(user) }, 201)
   },
@@ -143,6 +165,40 @@ auth.post(
     return c.json({ user: publicUser(user) })
   },
 )
+
+// ------------------------------------------------------- email verification
+auth.post(
+  '/email/verify',
+  limitByIp('email-verify', { limit: 30, windowSec: 3600 }),
+  body(z.object({ token: z.string().min(10).max(200) })),
+  async (c) => {
+    const { db } = c.var.svc
+    const now = Date.now()
+    const code = await db.first(
+      `SELECT * FROM verification_codes
+        WHERE purpose = 'email_verify' AND code_hash = ? AND consumed_at IS NULL AND expires_at > ?`,
+      [await sha256Hex(c.req.valid('json').token), now],
+    )
+    if (!code) throw badRequest('This confirmation link is invalid or has expired. Sign in and request a new one.')
+    // The email must still belong to an account (it may have been changed since)
+    const user = await db.first('SELECT id FROM users WHERE email = ?', [code.target])
+    if (!user) throw badRequest('This confirmation link is invalid or has expired. Sign in and request a new one.')
+    await db.batch([
+      { sql: 'UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ?', params: [now, user.id] },
+      { sql: 'UPDATE verification_codes SET consumed_at = ? WHERE id = ?', params: [now, code.id] },
+    ])
+    return c.json({ ok: true, email: code.target })
+  },
+)
+
+auth.post('/email/resend', requireUser, async (c) => {
+  const me = c.var.user
+  if (!me.email) throw badRequest('Add an email address to your profile first.')
+  if (me.email_verified) return c.json({ ok: true, alreadyVerified: true })
+  await hit(c, 'verify-resend', me.id, { limit: 3, windowSec: 3600 })
+  await sendEmailVerification(c.var.svc, me.email)
+  return c.json({ ok: true })
+})
 
 // --------------------------------------------------------------- phone OTP
 auth.post(

@@ -6,6 +6,8 @@ Disallow: /admin
 Disallow: /shop/checkout
 Disallow: /shop/order/
 Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /unsubscribe
 # Internal search results
 Disallow: /*?q=
 

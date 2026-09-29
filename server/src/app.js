@@ -76,10 +76,13 @@ export function createApp(getServices) {
   // CSRF guard for cookie-authenticated writes: a cross-site form post
   // can't send JSON without a CORS preflight, and foreign origins are
   // rejected outright. Webhooks (signed) and multipart uploads are exempt
-  // from the JSON rule but uploads still need an allowed Origin.
+  // from the JSON rule but uploads still need an allowed Origin. One-click
+  // unsubscribe (RFC 8058) is a form post from the mail provider; it uses
+  // no cookie and the token in the URL is the only credential.
   app.use('/api/*', async (c, next) => {
     const method = c.req.method
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS' || c.req.path.startsWith('/api/webhooks/')) return next()
+    if (c.req.path === '/api/forms/newsletter/one-click') return next()
     const origin = c.req.header('origin')
     if (origin && !allowedOrigins(c).includes(origin) && origin !== new URL(c.req.url).origin) throw forbidden('Origin not allowed.')
     const type = c.req.header('content-type') ?? ''

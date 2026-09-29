@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { PageShell } from '../components/layout/PageShell.jsx'
 import { PageHero, Section } from '../components/ui/Section.jsx'
@@ -275,6 +275,94 @@ export function ResetPassword() {
           <FormError message={a.error} />
           <Button type="submit" className="w-full" disabled={a.busy}>
             {a.busy ? 'Saving…' : 'Save and sign in'}
+          </Button>
+        </form>
+      )}
+    </AuthShell>
+  )
+}
+
+// ---------------------------------------------------- confirm email (link) --
+// Opened from the "Confirm your email" message. Confirms straight away.
+export function VerifyEmail() {
+  const [params] = useSearchParams()
+  const { user, setUser } = useAuth()
+  const token = params.get('token') ?? ''
+  const [state, setState] = useState(token ? 'working' : 'missing') // working | done | failed | missing
+  const [error, setError] = useState('')
+  const started = useRef(false)
+
+  useEffect(() => {
+    if (!token || started.current) return
+    started.current = true
+    api
+      .post('/auth/email/verify', { token })
+      .then((r) => {
+        setUser((u) => (u && u.email === r.email ? { ...u, emailVerified: true } : u))
+        setState('done')
+      })
+      .catch((err) => {
+        setError(err.message)
+        setState('failed')
+      })
+  }, [token, setUser])
+
+  return (
+    <AuthShell title="Confirm your email" path="/verify-email">
+      {state === 'working' && <p className="text-ink-600" aria-busy="true">Confirming…</p>}
+      {state === 'done' && (
+        <div className="space-y-4">
+          <FormSent>Your email is confirmed. Thanks!</FormSent>
+          <Button to={user ? '/account' : '/shop'} className="w-full">
+            {user ? 'Go to my account' : 'Continue shopping'}
+          </Button>
+        </div>
+      )}
+      {(state === 'failed' || state === 'missing') && (
+        <div className="space-y-4">
+          <FormError message={state === 'missing' ? 'This link is incomplete.' : error} />
+          <p className="text-ink-600">
+            {user ? 'You can send yourself a new link from ' : 'Sign in and send yourself a new link from '}
+            <Link to={user ? '/account' : '/login?next=/account'} className="font-semibold text-brand-700">
+              My account
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+    </AuthShell>
+  )
+}
+
+// ------------------------------------------------ newsletter unsubscribe --
+// Needs a click: some mail scanners open every link in an email, and that
+// alone mustn't unsubscribe anyone. (Mail apps use the one-click header.)
+export function Unsubscribe() {
+  const [params] = useSearchParams()
+  const token = params.get('token') ?? ''
+  const a = useAction()
+  const [done, setDone] = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (await a.run(() => api.post('/forms/newsletter/unsubscribe', { token }))) setDone(true)
+  }
+
+  return (
+    <AuthShell title="Unsubscribe" seoTitle="Unsubscribe from the newsletter" path="/unsubscribe">
+      {!token ? (
+        <p className="text-ink-600">This unsubscribe link is incomplete. Use the link at the bottom of any CircuitBay newsletter email.</p>
+      ) : done ? (
+        <div className="space-y-4">
+          <FormSent>You&rsquo;re unsubscribed. You won&rsquo;t get any more newsletter emails from us.</FormSent>
+          <p className="text-sm text-ink-600">Order and account emails still arrive as usual.</p>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="space-y-4">
+          <p className="text-ink-600">Stop getting the CircuitBay newsletter (new builds, tutorials and kit drops)?</p>
+          <FormError message={a.error} />
+          <Button type="submit" className="w-full" disabled={a.busy}>
+            {a.busy ? 'Unsubscribing…' : 'Unsubscribe'}
           </Button>
         </form>
       )}

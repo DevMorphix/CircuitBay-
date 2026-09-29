@@ -49,6 +49,8 @@ export function Account() {
         {status === 'loading' ? (
           <p className="text-ink-600" aria-busy="true">Loading your account…</p>
         ) : (
+          <>
+          {user?.email && !user.emailVerified && <VerifyEmailBanner email={user.email} />}
           <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
             <nav aria-label="Account sections" className="flex gap-2 overflow-x-auto lg:flex-col">
               {TABS.map((t) => (
@@ -85,9 +87,40 @@ export function Account() {
               )}
             </div>
           </div>
+          </>
         )}
       </Section>
     </PageShell>
+  )
+}
+
+function VerifyEmailBanner({ email }) {
+  const [state, setState] = useState('idle') // idle | sending | sent | error
+  const [error, setError] = useState('')
+  const resend = async () => {
+    setState('sending')
+    try {
+      await api.post('/auth/email/resend', {})
+      setState('sent')
+    } catch (err) {
+      setError(err.message)
+      setState('error')
+    }
+  }
+  return (
+    <div role="status" className="mb-6 flex flex-col gap-3 rounded-xl border border-brand-200 bg-white p-4 text-sm text-ink-600 sm:flex-row sm:items-center sm:justify-between">
+      <p>
+        <strong className="text-ink-900">Confirm your email.</strong> We sent a link to {email}. Confirming it makes sure order updates and password resets reach you.
+      </p>
+      {state === 'sent' ? (
+        <span className="shrink-0 font-semibold text-brand-700">New link sent — check your inbox.</span>
+      ) : (
+        <button type="button" onClick={resend} disabled={state === 'sending'} className="shrink-0 font-semibold text-brand-700 hover:underline disabled:opacity-60">
+          {state === 'sending' ? 'Sending…' : 'Resend the link'}
+        </button>
+      )}
+      {state === 'error' && <FormError message={error} />}
+    </div>
   )
 }
 

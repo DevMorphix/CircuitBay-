@@ -105,6 +105,95 @@ describe('auth: email + password', () => {
   })
 })
 
+describe('email verification', () => {
+  const { app, svc } = setup()
+  const tokenFrom = (mail) => decodeURIComponent(mail.text.match(/verify-email\?token=([^\s]+)/)[1])
+
+  it('emails a confirm link on sign-up; the link verifies once', async () => {
+    const api = client(app)
+    await api.post('/api/auth/register', { email: 'v@example.com', password: 'verify me please' })
+    const mail = svc.email.sent.at(-1)
+    expect(mail).toMatchObject({ to: 'v@example.com', subject: 'Confirm your email for CircuitBay' })
+    expect(mail.html).toContain('<a href="http://localhost:5173/verify-email?token=')
+    expect((await api.get('/api/auth/me')).body.user.emailVerified).toBe(false)
+
+    const token = tokenFrom(mail)
+    expect((await client(app).post('/api/auth/email/verify', { token })).body).toMatchObject({ ok: true, email: 'v@example.com' })
+    expect((await api.get('/api/auth/me')).body.user.emailVerified).toBe(true)
+    expect((await client(app).post('/api/auth/email/verify', { token })).status).toBe(400)
+  })
+
+  it('resends only for signed-in, unverified users; a new link replaces the old one', async () => {
+    expect((await client(app).post('/api/auth/email/resend', {})).status).toBe(401)
+    const api = client(app)
+    await api.post('/api/auth/register', { email: 'w@example.com', password: 'verify me please' })
+    const first = tokenFrom(svc.email.sent.at(-1))
+    expect((await api.post('/api/auth/email/resend', {})).status).toBe(200)
+    const second = tokenFrom(svc.email.sent.at(-1))
+    expect(second).not.toBe(first)
+    expect((await client(app).post('/api/auth/email/verify', { token: first })).status).toBe(400)
+    expect((await client(app).post('/api/auth/email/verify', { token: second })).status).toBe(200)
+    expect((await api.post('/api/auth/email/resend', {})).body.alreadyVerified).toBe(true)
+  })
+
+  it('changing the profile email un-verifies it and sends a new link', async () => {
+    const api = client(app)
+    await api.post('/api/auth/register', { email: 'x1@example.com', password: 'verify me please' })
+    await client(app).post('/api/auth/email/verify', { token: tokenFrom(svc.email.sent.at(-1)) })
+    const res = await api.patch('/api/me/profile', { email: 'x2@example.com' })
+    expect(res.body.user).toMatchObject({ email: 'x2@example.com', emailVerified: false })
+    expect(svc.email.sent.at(-1).to).toBe('x2@example.com')
+  })
+})
+
+describe('newsletter emails', () => {
+  const { app, svc, db } = setup({ RESEND_AUDIENCE_ID: 'aud_test' })
+  const api = client(app)
+
+  it('welcomes new subscribers once, with one-click unsubscribe headers', async () => {
+    const before = svc.email.sent.length
+    await api.post('/api/forms/newsletter', { email: 'news@example.com' })
+    await api.post('/api/forms/newsletter', { email: 'news@example.com' })
+    expect(svc.email.sent.length).toBe(before + 1)
+    const mail = svc.email.sent.at(-1)
+    expect(mail.subject).toBe("You're on the CircuitBay list")
+    expect(mail.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+    expect(mail.headers['List-Unsubscribe']).toMatch(/^<http:\/\/localhost:8787\/api\/forms\/newsletter\/one-click\?token=/)
+    expect(mail.html).toContain('/unsubscribe?token=')
+    expect(svc.email.audience.at(-1)).toEqual({ email: 'news@example.com', subscribed: true })
+  })
+
+  it('unsubscribes from the page link and from the one-click post', async () => {
+    const { unsubscribe_token: token } = await db.first('SELECT unsubscribe_token FROM newsletter_subscribers WHERE email = ?', ['news@example.com'])
+    expect((await api.post('/api/forms/newsletter/unsubscribe', { token })).status).toBe(200)
+    expect((await db.first('SELECT status FROM newsletter_subscribers WHERE email = ?', ['news@example.com'])).status).toBe('unsubscribed')
+    expect(svc.email.audience.at(-1)).toEqual({ email: 'news@example.com', subscribed: false })
+    expect((await api.post('/api/forms/newsletter/unsubscribe', { token: 'not-a-real-token' })).status).toBe(404)
+
+    // Re-subscribing sends the welcome again; the mail app's one-click post works without JSON
+    await api.post('/api/forms/newsletter', { email: 'news@example.com' })
+    const oneClick = await app.request(`/api/forms/newsletter/one-click?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'List-Unsubscribe=One-Click',
+    })
+    expect(oneClick.status).toBe(204)
+    expect((await db.first('SELECT status FROM newsletter_subscribers WHERE email = ?', ['news@example.com'])).status).toBe('unsubscribed')
+  })
+})
+
+describe('email templates', () => {
+  it('have an HTML and a text version, and escape customer-supplied text', async () => {
+    const { emails } = await import('../src/services/email.js')
+    const order = { id: 'CB1', contact_name: '<script>x</script> Maker', total_paise: 118000, invoice_no: 'CB/26-27/000001' }
+    const mail = emails.orderConfirmed('https://circuitbay.in', order, [{ name: 'ESP32 <kit>', qty: 2, unit_price_paise: 50000 }])
+    expect(mail.text).toContain('ESP32 <kit> × 2 — ₹1,000.00')
+    expect(mail.text).toContain('₹1,180.00')
+    expect(mail.html).toContain('ESP32 &lt;kit&gt;')
+    expect(mail.html).not.toContain('<script>')
+  })
+})
+
 describe('auth: phone OTP', () => {
   const { app, svc } = setup()
 

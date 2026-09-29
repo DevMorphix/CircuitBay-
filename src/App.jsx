@@ -37,6 +37,8 @@ const Login = page(() => import('./pages/Auth.jsx'), 'Login')
 const Register = page(() => import('./pages/Auth.jsx'), 'Register')
 const ForgotPassword = page(() => import('./pages/Auth.jsx'), 'ForgotPassword')
 const ResetPassword = page(() => import('./pages/Auth.jsx'), 'ResetPassword')
+const VerifyEmail = page(() => import('./pages/Auth.jsx'), 'VerifyEmail')
+const Unsubscribe = page(() => import('./pages/Auth.jsx'), 'Unsubscribe')
 const AdminApp = page(() => import('./pages/admin/AdminApp.jsx'), 'AdminApp')
 
 // Shown for the split second a page chunk is loading
@@ -74,6 +76,8 @@ export default function App() {
               <Route path="/register" element={<Register />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/unsubscribe" element={<Unsubscribe />} />
               <Route path="/admin/*" element={<AdminApp />} />
               <Route path="/faq" element={<Faq />} />
 
