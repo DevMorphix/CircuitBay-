@@ -81,7 +81,46 @@ Checkout prices, stock and order data change immediately. Product pages, the
 blog and the projects page are still built from `src/content/*.js`, so
 catalog/content edits appear on those pages after that switch is made.
 
-## Before launch
+## Roadmap
 
-Search the code for `TODO_CLIENT` to find every placeholder: real product data
-and photos, the client's story, legal text, and service keys.
+Status of everything left before (and after) launch. Code items are done in
+this order, one commit each. Search the code for `TODO_CLIENT` to find every
+placeholder that needs real client input.
+
+### Code
+
+- [x] Admin dashboard (`/admin`)
+- [ ] Build product, blog and project pages from the API catalog (so admin edits reach the site) + "Publish site changes" button
+- [ ] GST tax invoices for every order
+- [ ] Refunds sent from admin through Razorpay's API (today: refund in the Razorpay dashboard, then record it in admin)
+- [ ] Error monitoring (Sentry) + analytics ID
+- [ ] Email polish: HTML templates, email verification, unsubscribe page, newsletter sync
+- [ ] Coupons (the coupon box is on screen but not connected)
+- [ ] Reviews from verified buyers (so ratings can be shown honestly)
+- [ ] Courier integration (e.g. Shiprocket) for automatic tracking updates
+- [ ] Automated browser tests for sign-in, checkout and admin
+
+### Client content
+
+- [ ] Real products, prices, stock, photos and datasheets (enter them in `/admin`)
+- [ ] Company story, founder bio and photo, real stats, school logos, project photos and builder names
+- [ ] Logo files, social links, contact email/phone/address
+- [ ] Shipping fees, GST treatment, return window, FAQ answers
+- [ ] Privacy, terms, refund and shipping policies reviewed by a lawyer
+- [ ] ATL package details and regions served (`/schools`)
+- [ ] Sign-off on all draft copy; expert review of the technical articles
+
+### Accounts and setup
+
+- [ ] Cloudflare: D1 database, R2 bucket, Workers Paid plan, Pages project, domains, www → apex redirect
+- [ ] Razorpay: KYC, test keys (verify the real payment window), live keys, webhook
+- [ ] Resend: verify the sending domain
+- [ ] MSG91: DLT registration, sender ID, OTP template
+- [ ] Google: Search Console + sitemap, Analytics (GA4), Business Profile
+- [ ] Admin emails and secret keys configured in Cloudflare
+
+### After launch
+
+- [ ] Links from colleges, hackathons and the ATL vendor directory
+- [ ] Publish articles regularly (the two draft project write-ups first)
+- [ ] Re-measure page speed on the live site
