@@ -27,6 +27,17 @@ npm run dev
 In development, checkout completes without a real payment, and OTP codes and
 emails are printed in the API's terminal.
 
+### Tests
+
+```bash
+cd server && npm test        # API tests (vitest)
+npm run test:e2e             # browser tests (Playwright; first time: npx playwright install chromium)
+```
+
+The browser tests start their own API (port 8790, fresh database, fake
+payments and courier) and site (port 5190), so they never touch your dev
+servers or data.
+
 ## Build and deploy
 
 `npm run build` makes a production build in `dist/`. Every public page is
@@ -49,7 +60,7 @@ build fails if any page breaks the SEO checks.
   Resend, MSG91).
 
 CI (`.github/workflows/ci.yml`) runs lint, the prerendered build with SEO
-checks, and the API test suite on every push.
+checks, the API tests and the browser tests on every push.
 
 ## Architecture
 
@@ -115,7 +126,7 @@ placeholder that needs real client input.
 - [x] Coupons: percent / rupees off / free shipping, minimum order, dates, total and per-customer limits; applied before GST (shown on the invoice); uses reserved at checkout and given back if unpaid; admin screen with usage
 - [x] Reviews from verified buyers: only customers with a delivered order can review (guest orders count once the email is confirmed); admin approval + public replies; ratings on product pages, cards and Google product data come only from approved reviews
 - [x] Courier integration (Shiprocket): one-click booking from the admin (AWB, pickup, label), automatic tracking updates by webhook with polling as a backstop, customer emails at each step, courier problems flagged on the dashboard
-- [ ] Automated browser tests for sign-in, checkout and admin
+- [x] Automated browser tests (Playwright): sign-in, cart → coupon → checkout → tracking, courier booking → delivered → verified review → approval, Markdown articles, admin access, and a phone-sized run; in CI on every push
 
 ### Client content
 
