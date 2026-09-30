@@ -50,6 +50,17 @@ const schema = z
     // Optional: keep a Resend audience in sync with the newsletter list
     RESEND_AUDIENCE_ID: z.string().optional(),
 
+    // Courier: 'manual' = type the courier + AWB in the admin (no API);
+    // 'shiprocket' = book shipments and get tracking automatically;
+    // 'fake' = local development / tests
+    COURIER_PROVIDER: z.enum(['manual', 'shiprocket', 'fake']).default('manual'),
+    SHIPROCKET_EMAIL: z.string().optional(), // an API user (Shiprocket → Settings → API)
+    SHIPROCKET_PASSWORD: z.string().optional(),
+    SHIPROCKET_PICKUP_LOCATION: z.string().default('Primary'), // pickup address nickname in Shiprocket
+    SHIPROCKET_WEBHOOK_TOKEN: z.string().min(16).optional(), // sent by Shiprocket as x-api-key
+    SHIP_DEFAULT_WEIGHT_GRAMS: z.coerce.number().int().positive().default(500), // per item without a weight
+    SHIP_BOX_CM: z.string().regex(/^\d+(\.\d+)?x\d+(\.\d+)?x\d+(\.\d+)?$/).default('20x15x8'), // L x B x H
+
     SMS_PROVIDER: z.enum(['console', 'msg91']).default('console'),
     MSG91_AUTH_KEY: z.string().optional(),
     MSG91_OTP_TEMPLATE_ID: z.string().optional(),
@@ -65,6 +76,13 @@ const schema = z
     need(c.EMAIL_PROVIDER === 'resend', 'RESEND_API_KEY', 'when EMAIL_PROVIDER=resend')
     need(c.SMS_PROVIDER === 'msg91', 'MSG91_AUTH_KEY', 'when SMS_PROVIDER=msg91')
     need(c.SMS_PROVIDER === 'msg91', 'MSG91_OTP_TEMPLATE_ID', 'when SMS_PROVIDER=msg91')
+    const shiprocket = c.COURIER_PROVIDER === 'shiprocket'
+    need(shiprocket, 'SHIPROCKET_EMAIL', 'when COURIER_PROVIDER=shiprocket')
+    need(shiprocket, 'SHIPROCKET_PASSWORD', 'when COURIER_PROVIDER=shiprocket')
+    need(shiprocket, 'SHIPROCKET_WEBHOOK_TOKEN', 'when COURIER_PROVIDER=shiprocket')
+    if (c.APP_ENV === 'production' && c.COURIER_PROVIDER === 'fake') {
+      ctx.addIssue({ code: 'custom', path: ['COURIER_PROVIDER'], message: 'the fake courier is not allowed in production' })
+    }
     if (c.APP_ENV === 'production' && c.PAYMENTS_PROVIDER === 'fake') {
       ctx.addIssue({ code: 'custom', path: ['PAYMENTS_PROVIDER'], message: 'fake payments are not allowed in production' })
     }

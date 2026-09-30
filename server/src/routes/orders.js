@@ -244,7 +244,7 @@ orders.get(
     ])
     const full = serializeOrder(order, items, events)
     return c.json({
-      order: { id: full.id, status: full.status, invoiceNo: full.invoiceNo, creditNoteNo: full.creditNoteNo, createdAt: full.createdAt, items: full.items, totals: full.totals, shippingMethod: full.shippingMethod, courier: full.courier, trackingNumber: full.trackingNumber, events: full.events },
+      order: { id: full.id, status: full.status, invoiceNo: full.invoiceNo, creditNoteNo: full.creditNoteNo, createdAt: full.createdAt, items: full.items, totals: full.totals, shippingMethod: full.shippingMethod, courier: full.courier, trackingNumber: full.trackingNumber, trackingUrl: full.trackingUrl, trackingStatus: full.trackingStatus, events: full.events },
       steps: FULFILMENT_STATUSES,
     })
   },

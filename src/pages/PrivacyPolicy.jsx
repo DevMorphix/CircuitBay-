@@ -14,8 +14,9 @@ export function PrivacyPolicy() {
       </p>
       <p>
         <strong>Service providers:</strong> we use Razorpay (payments), Cloudflare (hosting and
-        storage), an email provider (order and account emails) and an SMS provider (sign-in
-        codes). TODO_CLIENT: confirm the final list.
+        storage), an email provider (order and account emails), an SMS provider (sign-in
+        codes) and a shipping partner (Shiprocket and its courier companies), who receive your
+        name, delivery address, phone number and email to deliver your order. TODO_CLIENT: confirm the final list.
       </p>
       <p>
         <strong>Cookies &amp; analytics:</strong> a session cookie keeps you signed in. We use

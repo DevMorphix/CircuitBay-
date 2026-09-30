@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { badRequest, unauthorized } from '../lib/errors.js'
 import { markOrderPaid, markOrderPaymentFailed } from '../services/orders.js'
+import { applyCourierStatus } from '../services/shipments.js'
 
 export const webhooks = new Hono()
 
@@ -70,4 +71,29 @@ webhooks.post('/razorpay', async (c) => {
     }
   }
   return c.json({ ok: true })
+})
+
+// POST /webhooks/courier — Shiprocket → Settings → API → Webhooks: set the
+// URL to https://api.circuitbay.in/api/webhooks/courier (Shiprocket refuses
+// URLs containing its own name) and the token to SHIPROCKET_WEBHOOK_TOKEN.
+// Always answers 200 once authenticated, so Shiprocket doesn't retry
+// updates for orders we don't know.
+webhooks.post('/courier', async (c) => {
+  const svc = c.var.svc
+  if (!svc.courier) throw badRequest('No courier is connected.')
+  if (!svc.courier.verifyWebhook(c)) throw unauthorized('Invalid webhook token.')
+  let event
+  try {
+    event = await c.req.json()
+  } catch {
+    throw badRequest('Invalid JSON.')
+  }
+  const awb = event.awb != null ? String(event.awb) : null
+  const order =
+    (awb && (await svc.db.first('SELECT * FROM orders WHERE tracking_number = ? AND courier_provider = ?', [awb, svc.courier.name]))) ||
+    (event.order_id && (await svc.db.first('SELECT * FROM orders WHERE id = ? AND courier_provider = ?', [String(event.order_id), svc.courier.name])))
+  if (!order) return c.json({ ok: true, ignored: 'unknown shipment' })
+  const at = Date.parse(event.current_timestamp ?? '') || Date.now()
+  const result = await applyCourierStatus(svc, order, event.current_status ?? event.shipment_status, at)
+  return c.json({ ok: true, ...result })
 })

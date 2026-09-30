@@ -162,6 +162,7 @@ export const emails = {
       paragraphs: [
         `Order ${order.id} is now ${STATUS_LABEL[status] ?? status.replace(/_/g, ' ')}.`,
         ...(order.courier && order.tracking_number ? [`Courier: ${order.courier} · tracking number ${order.tracking_number}`] : []),
+        ...(order.tracking_url && status !== 'delivered' ? [`Live courier tracking: ${order.tracking_url}`] : []),
       ],
       button: { label: 'Track your order', url: `${siteUrl}/shop/track?order=${order.id}` },
       after:

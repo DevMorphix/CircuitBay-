@@ -160,7 +160,9 @@ export function OrderDetail() {
                     <li key={i} className="flex gap-3">
                       <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-600" />
                       <div>
-                        <p className="font-semibold text-ink-900">{ORDER_STATUS[e.status]?.label ?? e.status.replace(/_/g, ' ')}</p>
+                        <p className={`font-semibold ${e.status === 'courier_issue' ? 'text-navy-800' : 'text-ink-900'}`}>
+                          {EVENT_LABEL[e.status] ?? ORDER_STATUS[e.status]?.label ?? e.status.replace(/_/g, ' ')}
+                        </p>
                         <p className="text-xs text-ink-400">
                           {dateTime(e.at)}
                           {e.note ? ` · ${e.note}` : ''}
@@ -176,6 +178,8 @@ export function OrderDetail() {
               <Panel title="Status" action={<StatusPill status={o.status} />}>
                 <StatusForm order={o} onDone={reload} />
               </Panel>
+
+              <ShipmentPanel order={o} courier={data.courier} onDone={reload} />
 
               {o.status === 'cancelled' && o.paidAt && <RefundPanel order={o} onDone={reload} />}
 
@@ -216,6 +220,78 @@ export function OrderDetail() {
         )}
       </LoadState>
     </>
+  )
+}
+
+const EVENT_LABEL = { courier: 'Courier update', courier_issue: 'Courier problem — check with the courier' }
+
+// Courier booking (Shiprocket) and live tracking. With no courier connected
+// (COURIER_PROVIDER=manual), shipping details are typed into the status form.
+function ShipmentPanel({ order: o, courier, onDone }) {
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [msg, setMsg] = useState('')
+  const booked = Boolean(o.shipment?.provider)
+  const canBook = courier && !booked && ['placed', 'confirmed', 'packed'].includes(o.status)
+  if (!booked && !canBook) return null
+
+  const run = async (kind, fn) => {
+    setBusy(kind)
+    setError('')
+    setMsg('')
+    try {
+      const r = await fn()
+      if (kind === 'refresh') setMsg(r.courierStatus ? `Courier says: ${r.courierStatus}` : 'No update from the courier yet.')
+      onDone()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <Panel title="Shipment">
+      {booked ? (
+        <div className="grid gap-3 text-sm">
+          <dl className="space-y-1 text-ink-600">
+            <div className="flex justify-between gap-3"><dt>Courier</dt><dd className="text-ink-900">{o.courier ?? '—'}</dd></div>
+            <div className="flex justify-between gap-3"><dt>AWB</dt><dd className="font-mono text-ink-900">{o.trackingNumber ?? '—'}</dd></div>
+            <div className="flex justify-between gap-3"><dt>Courier status</dt><dd className="text-ink-900">{o.trackingStatus ?? '—'}</dd></div>
+            {o.shipment.checkedAt && <div className="flex justify-between gap-3"><dt>Checked</dt><dd>{dateTime(o.shipment.checkedAt)}</dd></div>}
+          </dl>
+          <div className="flex flex-wrap gap-2">
+            {o.shipment.labelUrl && (
+              <a href={o.shipment.labelUrl} target="_blank" rel="noopener noreferrer" className={btn.primary}>
+                Print label
+              </a>
+            )}
+            {o.trackingUrl && (
+              <a href={o.trackingUrl} target="_blank" rel="noopener noreferrer" className={btn.secondary}>
+                Courier tracking
+              </a>
+            )}
+            {courier === o.shipment.provider && (
+              <button type="button" disabled={Boolean(busy)} className={btn.secondary} onClick={() => run('refresh', () => api.post(`/admin/orders/${o.id}/tracking/refresh`, {}))}>
+                {busy === 'refresh' ? 'Checking…' : 'Refresh tracking'}
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-ink-400">Tracking updates arrive automatically and move the order to shipped, out for delivery and delivered, emailing the customer each time.</p>
+        </div>
+      ) : (
+        <div className="grid gap-3 text-sm">
+          <p className="text-ink-600">
+            Book a pickup{courier === 'fake' ? ' (test courier)' : ' with Shiprocket'}: the courier and AWB are assigned, a pickup is scheduled and the shipping label is ready to print. The order moves to packed and the customer is emailed.
+          </p>
+          <button type="button" disabled={Boolean(busy)} className={btn.primary} onClick={() => run('book', () => api.post(`/admin/orders/${o.id}/ship`, {}))}>
+            {busy === 'book' ? 'Booking…' : 'Book shipment'}
+          </button>
+        </div>
+      )}
+      {msg && <p role="status" className="mt-3 text-sm font-medium text-brand-700">{msg}</p>}
+      {error && <p role="alert" className="mt-3 text-sm font-medium text-navy-800">{error}</p>}
+    </Panel>
   )
 }
 

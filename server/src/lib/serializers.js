@@ -85,6 +85,8 @@ export const order = (o, items = [], events = []) => ({
   },
   couponCode: o.coupon_code ?? null,
   courier: o.courier,
+  trackingUrl: o.tracking_url ?? null,
+  trackingStatus: o.tracking_status ?? null,
   trackingNumber: o.tracking_number,
   invoiceNo: o.invoice_no ?? null,
   invoicedAt: o.invoiced_at ?? null,

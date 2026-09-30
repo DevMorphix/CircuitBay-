@@ -7,6 +7,7 @@ import { HttpError, forbidden } from './lib/errors.js'
 import { loadUser } from './middleware/auth.js'
 import { createEmailService } from './services/email.js'
 import { createSmsService } from './services/sms.js'
+import { createCourier } from './services/courier.js'
 import { createPaymentProvider } from './services/payments.js'
 import { createErrorReporter } from './lib/monitoring.js'
 import { auth } from './routes/auth.js'
@@ -33,6 +34,7 @@ export function buildServices({ config, db, storage, cache = createMemoryCache()
     email: createEmailService(config, { log }),
     sms: createSmsService(config, { log }),
     payments: createPaymentProvider(config),
+    courier: createCourier(config, { db }),
     reportError: createErrorReporter(config),
   }
 }

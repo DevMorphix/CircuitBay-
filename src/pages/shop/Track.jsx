@@ -85,6 +85,21 @@ export function Track() {
             {order.trackingNumber && (
               <p className="mt-2 text-sm text-ink-600">
                 {order.courier ?? 'Courier'} tracking number: <span className="font-semibold text-ink-900">{order.trackingNumber}</span>
+                {order.trackingStatus && order.status !== 'delivered' && (
+                  <>
+                    {' '}
+                    · latest: <span className="font-semibold text-ink-900">{order.trackingStatus.toLowerCase()}</span>
+                  </>
+                )}
+                {order.trackingUrl && order.status !== 'delivered' && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <a href={order.trackingUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-700">
+                      Live courier tracking →
+                    </a>
+                  </>
+                )}
               </p>
             )}
 

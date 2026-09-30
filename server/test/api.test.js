@@ -1257,3 +1257,165 @@ describe('reviews from verified buyers', () => {
     expect(authorName('')).toBe('Verified buyer')
   })
 })
+
+describe('courier: bookings and tracking', () => {
+  const { app, db, svc } = setup({ COURIER_PROVIDER: 'fake' })
+  const admin = client(app)
+  const hook = (body, token = 'fake-courier-token') =>
+    app.request('/api/webhooks/courier', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': token }, body: JSON.stringify(body) })
+  const paidOrder = async () => {
+    const buyer = client(app)
+    const co = await buyer.post('/api/checkout', checkoutBody([{ productId: 'esp32-iot-starter', qty: 2 }]))
+    await buyer.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: `pay_${co.body.orderId}`, razorpay_signature: 'fake-ok' })
+    return co.body.orderId
+  }
+  const order = (id) => db.first('SELECT * FROM orders WHERE id = ?', [id])
+  let orderId, awb
+
+  beforeAll(async () => {
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    orderId = await paidOrder()
+  })
+
+  it('books a shipment once: AWB, courier, packed status and a customer email', async () => {
+    const res = await admin.post(`/api/admin/orders/${orderId}/ship`, {})
+    expect(res.status).toBe(200)
+    expect(res.body.order).toMatchObject({ status: 'packed', courier: 'Test Courier', trackingStatus: 'AWB ASSIGNED' })
+    awb = res.body.order.trackingNumber
+    expect(awb).toMatch(/^FAKE/)
+    expect(svc.email.sent.at(-1).subject).toBe(`Order ${orderId}: packed`)
+    expect((await admin.post(`/api/admin/orders/${orderId}/ship`, {})).status).toBe(409)
+    const detail = (await admin.get(`/api/admin/orders/${orderId}`)).body
+    expect(detail.courier).toBe('fake')
+    expect(detail.order.shipment.provider).toBe('fake')
+  })
+
+  it('webhook: authenticates, moves the order forward only, and emails each step', async () => {
+    expect((await hook({ awb, current_status: 'PICKED UP' }, 'wrong')).status).toBe(401)
+    expect(await (await hook({ awb: 'NOPE', current_status: 'DELIVERED' })).json()).toMatchObject({ ignored: 'unknown shipment' })
+
+    expect(await (await hook({ awb, current_status: 'PICKED UP' })).json()).toMatchObject({ changed: true, status: 'shipped' })
+    expect(svc.email.sent.at(-1).subject).toBe(`Order ${orderId}: shipped`)
+    const sent = svc.email.sent.length
+    expect(await (await hook({ awb, current_status: 'PICKED UP' })).json()).toMatchObject({ changed: false }) // repeat
+    expect(await (await hook({ awb, current_status: 'IN TRANSIT' })).json()).toMatchObject({ changed: false }) // already shipped
+    expect(svc.email.sent.length).toBe(sent)
+
+    await hook({ awb, current_status: 'UNDELIVERED' })
+    expect((await admin.get('/api/admin/stats')).body.inbox.shippingIssues).toBe(1)
+    await hook({ order_id: orderId, current_status: 'OUT FOR DELIVERY' }) // found by our order id too
+    expect((await order(orderId)).status).toBe('out_for_delivery')
+    await hook({ awb, current_status: 'DELIVERED' })
+    expect((await order(orderId)).status).toBe('delivered')
+    expect(svc.email.sent.at(-1).text).toContain('/account?tab=reviews')
+    await hook({ awb, current_status: 'IN TRANSIT' }) // late, out-of-order update
+    expect((await order(orderId)).status).toBe('delivered')
+
+    const events = (await db.all('SELECT status, note FROM order_events WHERE order_id = ? ORDER BY id', [orderId])).map((e) => e.status)
+    expect(events).toEqual(['pending_payment', 'placed', 'packed', 'shipped', 'courier', 'courier_issue', 'out_for_delivery', 'delivered'])
+    const tracked = await client(app).get(`/api/orders/track?orderId=${orderId}&contact=buyer@example.com`)
+    expect(tracked.body.order).toMatchObject({ status: 'delivered', trackingStatus: 'DELIVERED', courier: 'Test Courier' })
+  })
+
+  it('polling catches up when webhooks are missed', async () => {
+    const { runScheduled } = await import('../src/services/maintenance.js')
+    const { FAKE_STEP_MS } = await import('../src/services/courier.js')
+    const id = await paidOrder()
+    await admin.post(`/api/admin/orders/${id}/ship`, {})
+    const booked = Date.now()
+    await runScheduled(svc, booked + 2.5 * FAKE_STEP_MS) // courier: IN TRANSIT
+    expect((await order(id)).status).toBe('shipped')
+    await runScheduled(svc, booked + 10 * FAKE_STEP_MS) // courier: DELIVERED
+    expect((await order(id)).status).toBe('delivered')
+  })
+
+  it('refuses unpaid orders, and manual mode has no booking', async () => {
+    const co = await client(app).post('/api/checkout', checkoutBody())
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/ship`, {})).status).toBe(400)
+
+    const manual = setup()
+    const a = client(manual.app)
+    await a.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    const res = await a.post(`/api/admin/orders/${orderId}/ship`, {})
+    expect(res.status).toBe(400)
+    expect(res.body.error.message).toMatch(/COURIER_PROVIDER=manual/)
+  })
+
+  it('maps courier statuses conservatively', async () => {
+    const { mapCourierStatus } = await import('../src/services/courier.js')
+    expect(mapCourierStatus('Delivered')).toBe('delivered')
+    expect(mapCourierStatus('RTO DELIVERED')).toBeNull()
+    expect(mapCourierStatus('UNDELIVERED')).toBeNull()
+    expect(mapCourierStatus('Reached at Destination Hub')).toBe('shipped')
+    expect(mapCourierStatus('PICKUP SCHEDULED')).toBeNull()
+  })
+})
+
+describe('courier: Shiprocket API', () => {
+  const TOKEN = 'x'.repeat(24)
+  const make = async (responder) => {
+    const { createCourier } = await import('../src/services/courier.js')
+    const { db } = setup()
+    const config = loadConfig({ APP_ENV: 'test', COURIER_PROVIDER: 'shiprocket', SHIPROCKET_EMAIL: 'api@circuitbay.in', SHIPROCKET_PASSWORD: 'pw', SHIPROCKET_WEBHOOK_TOKEN: TOKEN })
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      const path = url.replace('https://apiv2.shiprocket.in/v1/external', '')
+      const body = init.body ? JSON.parse(init.body) : undefined
+      calls.push({ path, method: init.method, auth: init.headers.Authorization, body })
+      const [status, json] = responder(path, body, calls)
+      return new Response(JSON.stringify(json), { status })
+    }
+    return { courier: createCourier(config, { db, fetchImpl }), calls, db }
+  }
+  const order = {
+    id: 'CBSHIP0001', contact_name: 'Test Builder Kumar', contact_email: 'b@example.com', contact_phone: '+91 98765 43210',
+    ship_line1: '1 Test Street', ship_line2: null, ship_city: 'Kochi', ship_state: 'Kerala', ship_pin: '682001',
+    paid_at: Date.UTC(2026, 8, 30, 6, 30), created_at: 0, shipping_paise: 0, total_paise: 353764,
+  }
+  const items = [{ product_id: 'esp32-iot-starter', name: 'ESP32 IoT Starter Kit', qty: 2, unit_price_paise: 149900, discount_paise: 0, tax_paise: 53964, gst_rate: 18, hsn_code: '85437099' }]
+
+  it('logs in once, books the order, assigns the AWB, schedules pickup and gets the label', async () => {
+    const { courier, calls, db } = await make((path) => {
+      if (path === '/auth/login') return [200, { token: 'tok1' }]
+      if (path === '/orders/create/adhoc') return [200, { order_id: 111, shipment_id: 222, status: 'NEW' }]
+      if (path === '/courier/assign/awb') return [200, { awb_assign_status: 1, response: { data: { awb_code: '1234567890', courier_name: 'Delhivery Surface' } } }]
+      if (path === '/courier/generate/pickup') return [200, { pickup_status: 1 }]
+      if (path === '/courier/generate/label') return [200, { label_created: 1, label_url: 'https://labels.example/1.pdf' }]
+      return [404, {}]
+    })
+    const booked = await courier.book({ order, items, weightGrams: 1000, box: [20, 15, 8] })
+    expect(booked).toEqual({ courierOrderId: '111', shipmentId: '222', awb: '1234567890', courier: 'Delhivery Surface', labelUrl: 'https://labels.example/1.pdf', trackingUrl: 'https://shiprocket.co/tracking/1234567890' })
+    expect(calls.map((c) => c.path)).toEqual(['/auth/login', '/orders/create/adhoc', '/courier/assign/awb', '/courier/generate/pickup', '/courier/generate/label'])
+    expect(calls.filter((c) => c.path === '/auth/login')).toHaveLength(1) // token cached
+    expect(calls[1].auth).toBe('Bearer tok1')
+    expect(calls[1].body).toMatchObject({
+      order_id: 'CBSHIP0001', order_date: '2026-09-30 12:00', billing_customer_name: 'Test', billing_last_name: 'Builder Kumar',
+      billing_phone: '9876543210', payment_method: 'Prepaid', weight: 1, length: 20, sub_total: 3537.64,
+      order_items: [{ sku: 'esp32-iot-starter', units: 2, selling_price: '1768.82', tax: 18, hsn: '85437099' }],
+    })
+    expect((await db.first(`SELECT token FROM service_tokens WHERE name = 'shiprocket'`)).token).toBe('tok1')
+  })
+
+  it('logs in again when the token has expired, and explains a failed AWB', async () => {
+    let logins = 0
+    const { courier } = await make((path, _b, calls) => {
+      if (path === '/auth/login') return [200, { token: `tok${++logins}` }]
+      if (path === '/orders/create/adhoc') return calls.at(-1).auth === 'Bearer tok1' ? [401, { message: 'Token expired' }] : [200, { order_id: 1, shipment_id: 2 }]
+      if (path === '/courier/assign/awb') return [200, { awb_assign_status: 0, message: 'No courier serviceable for this PIN' }]
+      return [200, {}]
+    })
+    await expect(courier.book({ order, items, weightGrams: 500, box: [20, 15, 8] })).rejects.toThrow(/No courier serviceable/)
+    expect(logins).toBe(2)
+  })
+
+  it('reads tracking, and checks the webhook token', async () => {
+    const { courier } = await make((path) =>
+      path === '/auth/login' ? [200, { token: 't' }] : [200, { tracking_data: { shipment_track: [{ current_status: 'Out For Delivery', updated_time: '2026-09-30 10:00:00' }] } }],
+    )
+    expect((await courier.track('1234567890')).status).toBe('Out For Delivery')
+    const req = (key) => ({ req: { header: (h) => (h === 'x-api-key' ? key : undefined) } })
+    expect(courier.verifyWebhook(req(TOKEN))).toBe(true)
+    expect(courier.verifyWebhook(req('nope'))).toBe(false)
+    expect(courier.verifyWebhook(req(undefined))).toBe(false)
+  })
+})

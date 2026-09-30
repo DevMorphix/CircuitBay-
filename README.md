@@ -61,6 +61,7 @@ checks, and the API test suite on every push.
                ├─ D1  (SQLite)   users, orders, products, stock, content…
                ├─ R2  (files)    product photos, datasheets, uploads
                ├─ Razorpay       payments + signed webhooks
+               ├─ Shiprocket     courier bookings + tracking webhooks
                ├─ Resend         email       └─ MSG91  SMS OTP
                └─ Cron (10 min)  release unpaid stock holds, cleanup
 ```
@@ -83,7 +84,7 @@ the API checks the role on every request).
 | Screen | What it does |
 |---|---|
 | Dashboard | 30-day sales, orders to fulfil, refunds needed, low stock, inbox counts |
-| Orders | Search/filter; move orders placed → confirmed → packed → shipped (courier + tracking no.) → delivered, with customer emails; cancel (stock returns); refund through Razorpay in one click; GST invoice |
+| Orders | Search/filter; book the courier (Shiprocket) in one click and print the label, then tracking moves orders to shipped → out for delivery → delivered automatically, with customer emails (or update statuses by hand); cancel (stock returns); refund through Razorpay in one click; GST invoice |
 | Products | Create/edit (photos, datasheet PDF, specs, badges, kit contents), quick stock edits, hide from shop |
 | Coupons | Create percent, rupees-off or free-shipping codes with a minimum order, dates and use limits; switch off any time; see paid orders and discount given per code |
 | Reviews | Approve or reject reviews from verified buyers, and reply publicly; the product rating updates automatically |
@@ -113,7 +114,7 @@ placeholder that needs real client input.
 - [x] Email polish: branded HTML emails (with text versions), email confirmation on sign-up / email change, newsletter welcome + unsubscribe page + one-click unsubscribe, optional Resend audience sync
 - [x] Coupons: percent / rupees off / free shipping, minimum order, dates, total and per-customer limits; applied before GST (shown on the invoice); uses reserved at checkout and given back if unpaid; admin screen with usage
 - [x] Reviews from verified buyers: only customers with a delivered order can review (guest orders count once the email is confirmed); admin approval + public replies; ratings on product pages, cards and Google product data come only from approved reviews
-- [ ] Courier integration (e.g. Shiprocket) for automatic tracking updates
+- [x] Courier integration (Shiprocket): one-click booking from the admin (AWB, pickup, label), automatic tracking updates by webhook with polling as a backstop, customer emails at each step, courier problems flagged on the dashboard
 - [ ] Automated browser tests for sign-in, checkout and admin
 
 ### Client content
@@ -134,6 +135,7 @@ placeholder that needs real client input.
 - [ ] Razorpay: KYC, test keys (verify the real payment window), live keys, webhook
 - [ ] Resend: verify the sending domain; optionally create an audience for the newsletter (`RESEND_AUDIENCE_ID`)
 - [ ] MSG91: DLT registration, sender ID, OTP template
+- [ ] Shiprocket: KYC, pickup address, API user, webhook (steps in `server/README.md`); packed weights for products
 - [ ] Google: Search Console + sitemap, Analytics (GA4 ID → `VITE_GA_MEASUREMENT_ID`), Business Profile
 - [ ] Sentry: create a project; set `VITE_SENTRY_DSN` (site) and `SENTRY_DSN` (API secret), and add alert rules
 - [ ] Admin emails and secret keys configured in Cloudflare

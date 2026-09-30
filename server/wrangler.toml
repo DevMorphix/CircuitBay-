@@ -22,7 +22,8 @@ bucket_name = "circuitbay-media"
 
 # Non-secret configuration. Secrets (RAZORPAY_KEY_SECRET,
 # RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY, MSG91_AUTH_KEY,
-# SITE_DEPLOY_HOOK_URL, SENTRY_DSN) are set with
+# SITE_DEPLOY_HOOK_URL, SENTRY_DSN, SHIPROCKET_PASSWORD,
+# SHIPROCKET_WEBHOOK_TOKEN) are set with
 # `npx wrangler secret put NAME` — never commit them here.
 [vars]
 APP_ENV = "production"
@@ -39,5 +40,11 @@ SMS_PROVIDER = "msg91"
 # RAZORPAY_KEY_ID = "rzp_live_xxx"
 # MSG91_OTP_TEMPLATE_ID = "xxx"
 # RESEND_AUDIENCE_ID = "xxx"   # optional: newsletter list → Resend audience
+# Courier: "manual" until Shiprocket is set up (see server/README.md)
+COURIER_PROVIDER = "manual"
+# SHIPROCKET_EMAIL = "api@circuitbay.in"
+# SHIPROCKET_PICKUP_LOCATION = "Primary"
+# SHIP_DEFAULT_WEIGHT_GRAMS = "500"
+# SHIP_BOX_CM = "20x15x8"
 
 # `wrangler dev` reads local overrides from .dev.vars (see .dev.vars.example)

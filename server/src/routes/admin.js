@@ -14,6 +14,7 @@ import { emails } from '../services/email.js'
 import { FULFILMENT_STATUSES, cancelAndRestockStatements, creditNoteStatements } from '../services/orders.js'
 import { creditNoteResponse, invoiceResponse } from '../services/invoice.js'
 import { publicReview, recomputeRatingStatement } from '../services/reviews.js'
+import { applyCourierStatus, bookShipment } from '../services/shipments.js'
 
 // Everything under /api/admin requires role=admin. Admins are the accounts
 // whose email is listed in ADMIN_EMAILS when they register.
@@ -40,6 +41,8 @@ admin.get('/stats', async (c) => {
         (SELECT COUNT(*) FROM workshop_requests WHERE status = 'new') AS workshops,
         (SELECT COUNT(*) FROM projects WHERE status = 'pending') AS projects,
         (SELECT COUNT(*) FROM reviews WHERE status = 'pending') AS reviews,
+        (SELECT COUNT(*) FROM orders WHERE status IN ('packed', 'shipped', 'out_for_delivery')
+           AND (tracking_status LIKE 'RTO%' OR tracking_status LIKE '%UNDELIVERED%' OR tracking_status LIKE '%LOST%' OR tracking_status LIKE '%DAMAGED%')) AS shippingIssues,
         (SELECT COUNT(*) FROM orders WHERE status = 'cancelled' AND paid_at IS NOT NULL AND refunded_at IS NULL) AS refundsNeeded`),
   ])
   return c.json({
@@ -53,7 +56,7 @@ admin.get('/stats', async (c) => {
 // ------------------------------------------------------------- products --
 // Admin view adds the raw storage keys the editor needs (public API only
 // returns URLs)
-const adminProduct = (config) => (p) => ({ ...product(config)(p), imageKeys: parseJson(p.images, []), datasheetKey: p.datasheet_key })
+const adminProduct = (config) => (p) => ({ ...product(config)(p), imageKeys: parseJson(p.images, []), datasheetKey: p.datasheet_key, weightGrams: p.weight_grams ?? null })
 
 const productIn = z.object({
   id: s.slug,
@@ -74,13 +77,14 @@ const productIn = z.object({
   datasheetKey: z.string().max(300).nullable().optional(),
   hsnCode: z.string().trim().regex(/^\d{4,8}$/, 'HSN codes are 4–8 digits.').nullable().optional(),
   gstRate: z.union([z.literal(0), z.literal(5), z.literal(12), z.literal(18), z.literal(28)]).default(18),
+  weightGrams: z.number().int().min(1).max(100_000).nullable().optional(), // packed weight, for courier bookings
   active: z.boolean().default(true),
 })
 
 const productParams = (p, now) => [
   p.name, p.category, p.kit ? 1 : 0, p.level ?? null, rupeesToPaise(p.price), p.stock, p.brand ?? null, p.type ?? null,
   json(p.badges), p.forWhat ?? null, p.build ?? null, json(p.inside), json(p.specs), json(p.images), p.datasheetKey ?? null,
-  p.active ? 1 : 0, p.hsnCode ?? null, p.gstRate, now,
+  p.active ? 1 : 0, p.hsnCode ?? null, p.gstRate, p.weightGrams ?? null, now,
 ]
 
 admin.get('/products', query(z.object({ q: z.string().max(100).optional(), ...page })), async (c) => {
@@ -107,8 +111,8 @@ admin.post('/products', body(productIn), async (c) => {
   const now = Date.now()
   await db.run(
     `INSERT INTO products (name, category, is_kit, level, price_paise, stock, brand, type, badges, for_what, build,
-       inside, specs, images, datasheet_key, active, hsn_code, gst_rate, updated_at, id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       inside, specs, images, datasheet_key, active, hsn_code, gst_rate, weight_grams, updated_at, id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [...productParams(p, now), p.id, now],
   )
   return c.json({ product: adminProduct(config)(await db.first('SELECT * FROM products WHERE id = ?', [p.id])) }, 201)
@@ -120,7 +124,7 @@ admin.put('/products/:id', body(productIn.omit({ id: true })), async (c) => {
   const p = c.req.valid('json')
   const res = await db.run(
     `UPDATE products SET name = ?, category = ?, is_kit = ?, level = ?, price_paise = ?, stock = ?, brand = ?, type = ?,
-       badges = ?, for_what = ?, build = ?, inside = ?, specs = ?, images = ?, datasheet_key = ?, active = ?, hsn_code = ?, gst_rate = ?, updated_at = ?
+       badges = ?, for_what = ?, build = ?, inside = ?, specs = ?, images = ?, datasheet_key = ?, active = ?, hsn_code = ?, gst_rate = ?, weight_grams = ?, updated_at = ?
      WHERE id = ?`,
     [...productParams(p, Date.now()), id],
   )
@@ -282,7 +286,12 @@ admin.get('/orders/:id', async (c) => {
     db.all('SELECT * FROM order_items WHERE order_id = ?', [o.id]),
     db.all('SELECT * FROM order_events WHERE order_id = ? ORDER BY created_at, id', [o.id]),
   ])
-  return c.json({ order: { ...serializeOrder(o, items, events), paymentProvider: o.payment_provider, paymentOrderId: o.payment_order_id, paymentId: o.payment_id, notes: o.notes, refundedAt: o.refunded_at, refundNote: o.refund_note } })
+  return c.json({ order: { ...serializeOrder(o, items, events), paymentProvider: o.payment_provider, paymentOrderId: o.payment_order_id, paymentId: o.payment_id, notes: o.notes, refundedAt: o.refunded_at, refundNote: o.refund_note,
+      shipment: { provider: o.courier_provider ?? null, shipmentId: o.shipment_id ?? null, labelUrl: o.label_url ?? null, checkedAt: o.tracking_checked_at ?? null },
+    },
+    // The connected courier (null = manual), so the page knows whether it can book
+    courier: c.var.svc.courier?.name ?? null,
+  })
 })
 
 // Advance fulfilment: confirmed → packed → shipped → … Emails the customer.
@@ -310,6 +319,10 @@ admin.post(
       // credit note — all in one transaction. Refund from the order page.
       const reason = d.note ?? 'Cancelled by CircuitBay'
       await db.batch([...cancelAndRestockStatements(o.id, [o.status], reason, now), ...creditNoteStatements(o.id, reason, now)])
+      // Cancel the courier pickup too (best effort — check the courier panel if it fails)
+      if (o.courier_provider && c.var.svc.courier?.name === o.courier_provider && ['packed', 'confirmed', 'placed'].includes(o.status)) {
+        await c.var.svc.courier.cancel(o).catch((err) => console.error('courier cancel failed', o.id, err))
+      }
     } else {
       await db.batch([
         {
@@ -329,6 +342,28 @@ admin.post(
     return c.json({ ok: true })
   },
 )
+
+// Book the courier (Shiprocket): AWB, pickup and label in one click
+admin.post('/orders/:id/ship', limitByIp('ship', { limit: 60, windowSec: 3600 }), async (c) => {
+  const o = await bookShipment(c.var.svc, c.req.param('id'))
+  return c.json({ order: serializeOrder(o) })
+})
+
+// Fetch the latest courier status now (normally automatic)
+admin.post('/orders/:id/tracking/refresh', limitByIp('track-refresh', { limit: 60, windowSec: 3600 }), async (c) => {
+  const { db, courier } = c.var.svc
+  const o = await db.first('SELECT * FROM orders WHERE id = ?', [c.req.param('id')])
+  if (!o) throw notFound('Order not found.')
+  if (!courier || o.courier_provider !== courier.name || !o.tracking_number) throw badRequest('This order was not booked through the connected courier.')
+  let t
+  try {
+    t = await courier.track(o.tracking_number)
+  } catch (err) {
+    throw new HttpError(502, 'courier_failed', `Couldn't reach the courier: ${err.message}`)
+  }
+  const result = t ? await applyCourierStatus(c.var.svc, o, t.status, t.at) : { changed: false }
+  return c.json({ ...result, courierStatus: t?.status ?? null })
+})
 
 admin.get('/orders/:id/credit-note', async (c) => {
   const o = await c.var.svc.db.first('SELECT * FROM orders WHERE id = ?', [c.req.param('id')])

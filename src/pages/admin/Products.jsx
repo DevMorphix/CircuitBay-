@@ -163,6 +163,7 @@ function ProductForm({ product, categories }) {
       active: d.active === 'on',
       hsnCode: d.hsnCode || null,
       gstRate: Number(d.gstRate),
+      weightGrams: d.weightGrams ? Number(d.weightGrams) : null,
     }
     setBusy(true)
     setSaved(false)
@@ -223,6 +224,7 @@ function ProductForm({ product, categories }) {
                 ))}
               </select>
             </Field>
+            <Field label="Packed weight (grams)" id="p-weight" name="weightGrams" type="number" min="1" step="1" defaultValue={product?.weightGrams ?? ''} hint="For courier bookings. Empty = the default per item." error={fe.weightGrams} />
             <Field label="Brand" id="p-brand" name="brand" defaultValue={product?.brand ?? ''} />
             <Field label="Type" id="p-type" name="type" defaultValue={product?.type ?? ''} placeholder="Sensor, Microcontroller, Kit…" />
             <label className="flex items-center gap-2 text-sm text-ink-900">
