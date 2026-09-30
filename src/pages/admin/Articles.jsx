@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { blogCategories } from '../../content/blogData.js'
 import { api, fieldErrors } from '../../lib/api.js'
 import { useApi } from '../../lib/useApi.js'
@@ -57,11 +57,14 @@ export function ArticleEditor() {
 
 function ArticleForm({ article }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const isNew = !article
   const [markdown, setMarkdown] = useState(() => blocksToMarkdown(article?.body ?? []))
   const [coverKey, setCoverKey] = useState(article?.coverKey ?? null)
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState({ error: '', fields: {}, saved: '' })
+  // A new article's first save moves to its edit page, which reloads the
+  // form — the "saved" message travels along in the navigation state
+  const [msg, setMsg] = useState(() => ({ error: '', fields: {}, saved: location.state?.saved ?? '' }))
 
   const submit = async (e) => {
     e.preventDefault()
@@ -85,8 +88,9 @@ function ArticleForm({ article }) {
     setMsg({ error: '', fields: {}, saved: '' })
     try {
       await api.put(`/admin/articles/${slug}`, payload)
-      setMsg({ error: '', fields: {}, saved: payload.status === 'published' ? 'Saved as published — click “Publish site changes” to put it on the blog.' : 'Draft saved.' })
-      if (isNew) navigate(`/admin/articles/${slug}`, { replace: true })
+      const saved = payload.status === 'published' ? 'Saved as published — click “Publish site changes” to put it on the blog.' : 'Draft saved.'
+      setMsg({ error: '', fields: {}, saved })
+      if (isNew) navigate(`/admin/articles/${slug}`, { replace: true, state: { saved } })
     } catch (err) {
       setMsg({ error: err.message, fields: fieldErrors(err), saved: '' })
     } finally {

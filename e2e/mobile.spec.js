@@ -4,6 +4,9 @@ import { PRODUCT } from './helpers.js'
 // Phone-sized screen: menu, no sideways scrolling, add to cart
 test('mobile: menu works, pages fit the screen, and the cart updates', async ({ page }) => {
   await page.goto('/')
+  // Touch screens use native snapping to the same checkpoints
+  await expect(page.locator('html')).toHaveClass(/home-snap/)
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toBe('y mandatory')
   await page.getByRole('button', { name: 'Open menu' }).first().click()
   const nav = page.getByRole('navigation', { name: 'Mobile' })
   await expect(nav).toBeVisible()

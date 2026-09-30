@@ -34,11 +34,15 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: `npx vite --port ${WEB_PORT} --strictPort`,
+      // A production build (like the real site) served by `vite preview`,
+      // which proxies /api like the dev server. The dev server re-optimises
+      // dependencies the first time a lazy page loads and reloads the tab,
+      // which made tests flaky.
+      command: `npx vite build --outDir dist-e2e --emptyOutDir --logLevel warn && npx vite preview --outDir dist-e2e --port ${WEB_PORT} --strictPort`,
       url: `http://localhost:${WEB_PORT}`,
       env: { API_PROXY_TARGET: `http://localhost:${API_PORT}` },
       reuseExistingServer: false,
-      timeout: 120_000,
+      timeout: 180_000,
     },
   ],
 })

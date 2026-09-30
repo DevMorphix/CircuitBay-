@@ -113,12 +113,12 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Home page only (toggled by Home.jsx): every top-level section carries
-   Tailwind's `snap-start`, so the page settles on section boundaries —
-   "proximity" rather than "mandatory" because the story reel is 520vh of
-   its own free-scrubbing scroll and must never get yanked back mid-scrub. */
+/* Home page on touch screens (toggled by useCheckpointScroll): a swipe
+   settles on the next checkpoint — each story-reel chapter and each
+   section (`snap-start`). Sections taller than the screen still scroll
+   freely inside. Mouse/trackpad/keyboard use the JS glide instead. */
 html.home-snap {
-  scroll-snap-type: y proximity;
+  scroll-snap-type: y mandatory;
 }
 
 @media (prefers-reduced-motion: reduce) {

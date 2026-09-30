@@ -29,7 +29,8 @@ export function Section({
   return (
     <section
       id={id}
-      className={`${TONES[tone]} ${snap ? 'snap-start' : ''} scroll-mt-20 px-4 py-20 sm:px-6 md:py-24 ${className}`}
+      data-checkpoint={snap ? '' : undefined}
+      className={`${TONES[tone]} ${snap ? 'snap-start snap-always' : ''} scroll-mt-20 px-4 py-20 sm:px-6 md:py-24 ${className}`}
     >
       <div className={`mx-auto w-full ${width}`}>
         {(eyebrow || title || subtitle) && (
