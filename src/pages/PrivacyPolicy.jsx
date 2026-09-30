@@ -23,6 +23,11 @@ export function PrivacyPolicy() {
         used (pages viewed, products viewed, items added to the cart, purchases).
       </p>
       <p>
+        <strong>Reviews:</strong> if you review a product, we publish your rating and review
+        with your first name and last initial (for example &ldquo;Priya S.&rdquo;) and a
+        &ldquo;Verified buyer&rdquo; label. You can edit or delete it from My account.
+      </p>
+      <p>
         <strong>Error monitoring:</strong> when something breaks, technical details about the
         error (such as the page and browser) are sent to Sentry so we can fix it. We don&rsquo;t
         send your name, email, payment details or the contents of forms.

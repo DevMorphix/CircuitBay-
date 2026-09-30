@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { PageShell } from '../components/layout/PageShell.jsx'
 import { PageHero, Section } from '../components/ui/Section.jsx'
 import { Button } from '../components/ui/Button.jsx'
@@ -13,11 +13,13 @@ import { STATE_NAMES } from '../content/indianStates.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { api, fieldErrors } from '../lib/api.js'
 import { useApi } from '../lib/useApi.js'
+import { Stars, StarInput } from '../components/shop/Reviews.jsx'
 
 const TABS = [
   { id: 'orders', label: 'Orders', icon: 'box' },
   { id: 'addresses', label: 'Addresses', icon: 'pin' },
   { id: 'wishlist', label: 'Wishlist', icon: 'heart' },
+  { id: 'reviews', label: 'Reviews', icon: 'star' },
   { id: 'profile', label: 'Profile', icon: 'user' },
   { id: 'community', label: 'Community', icon: 'users' },
 ]
@@ -36,10 +38,12 @@ const STATUS_LABEL = {
 // C8 — Orders · Addresses · Wishlist · Profile · Community link (signed-in only).
 export function Account() {
   const { user, status, logout } = useAuth()
-  const { pathname } = useLocation()
-  const [tab, setTab] = useState('orders')
+  const { pathname, search } = useLocation()
+  const [params] = useSearchParams()
+  // ?tab=reviews (links in emails and on product pages) opens that tab
+  const [tab, setTab] = useState(() => (TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'orders'))
 
-  if (status === 'signed-out') return <Navigate to={`/login?next=${encodeURIComponent(pathname)}`} replace />
+  if (status === 'signed-out') return <Navigate to={`/login?next=${encodeURIComponent(pathname + search)}`} replace />
 
   return (
     <PageShell shop seo={{ title: 'My account', path: '/account', noindex: true }}>
@@ -75,6 +79,7 @@ export function Account() {
               {tab === 'orders' && <Orders />}
               {tab === 'addresses' && <Addresses />}
               {tab === 'wishlist' && <Wishlist />}
+              {tab === 'reviews' && <Reviews />}
               {tab === 'profile' && <Profile />}
               {tab === 'community' && (
                 <div className="flex flex-col items-start gap-4">
@@ -307,6 +312,174 @@ function Wishlist() {
         </div>
       )}
     </>
+  )
+}
+
+// ------------------------------------------------------------ reviews --
+const REVIEW_STATUS = {
+  pending: 'Waiting for approval',
+  approved: 'Published',
+  rejected: 'Not published',
+}
+
+function Reviews() {
+  const { data, error, loading, reload } = useApi('/me/reviews')
+  const { user } = useAuth()
+  const [editing, setEditing] = useState(null) // productId
+  const done = () => {
+    setEditing(null)
+    reload()
+  }
+
+  if (loading || error) return <Loading error={error} />
+  const { reviewable, reviews } = data
+
+  return (
+    <>
+      <h2 className="font-heading text-xl font-semibold text-ink-900">Reviews</h2>
+      <p className="mt-1 text-sm text-ink-600">
+        Review parts from your delivered orders. Reviews appear on the product page after a quick check by our team.
+      </p>
+
+      {reviewable.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-ink-400">Ready to review</h3>
+          <ul className="mt-3 space-y-3">
+            {reviewable.map((p) => (
+              <li key={p.productId} className="rounded-xl border border-black/10 p-4">
+                {editing === p.productId ? (
+                  <ReviewForm productId={p.productId} name={p.name} onDone={done} onCancel={() => setEditing(null)} />
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <Link to={`/shop/product/${p.productId}`} className="font-semibold text-ink-900 hover:text-brand-700">
+                      {p.name}
+                    </Link>
+                    <Button onClick={() => setEditing(p.productId)}>Write a review</Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {reviews.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-ink-400">Your reviews</h3>
+          <ul className="mt-3 space-y-3">
+            {reviews.map((r) => (
+              <li key={r.productId} className="rounded-xl border border-black/10 p-4">
+                {editing === r.productId ? (
+                  <ReviewForm productId={r.productId} name={r.productName} initial={r} onDone={done} onCancel={() => setEditing(null)} />
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Link to={`/shop/product/${r.productId}`} className="font-semibold text-ink-900 hover:text-brand-700">
+                        {r.productName}
+                      </Link>
+                      <span className={`text-xs font-semibold ${r.status === 'approved' ? 'text-brand-700' : 'text-ink-400'}`}>{REVIEW_STATUS[r.status]}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Stars value={r.rating} size={14} />
+                      {r.title && <span className="text-sm font-semibold text-ink-900">{r.title}</span>}
+                    </div>
+                    <p className="mt-2 whitespace-pre-line text-sm text-ink-600">{r.body}</p>
+                    {r.reply && <p className="mt-2 rounded-lg bg-surface-soft p-2 text-sm text-ink-600">CircuitBay: {r.reply}</p>}
+                    <div className="mt-3 flex gap-4 text-sm font-semibold">
+                      <button type="button" onClick={() => setEditing(r.productId)} className="text-brand-700 hover:underline">
+                        Edit review
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm('Delete this review?')) return
+                          await api.del(`/me/reviews/${r.productId}`).catch(() => {})
+                          reload()
+                        }}
+                        className="text-ink-400 hover:text-navy-800"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {reviewable.length === 0 && reviews.length === 0 && (
+        <p className="mt-6 text-ink-600">
+          Nothing to review yet — once an order is delivered, its parts show up here.
+          {!user?.emailVerified && ' Ordered as a guest? Confirm your email (see the banner above) and those orders count too.'}
+        </p>
+      )}
+    </>
+  )
+}
+
+function ReviewForm({ productId, name, initial, onDone, onCancel }) {
+  const [rating, setRating] = useState(initial?.rating ?? 0)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [fields, setFields] = useState({})
+
+  const submit = async (e) => {
+    e.preventDefault()
+    const d = Object.fromEntries(new FormData(e.currentTarget))
+    if (!rating) return setFields({ rating: 'Choose a star rating.' })
+    setBusy(true)
+    setError('')
+    setFields({})
+    try {
+      await api.put(`/me/reviews/${productId}`, { rating, title: d.title || undefined, body: d.body })
+      onDone()
+    } catch (err) {
+      setError(err.message)
+      setFields(fieldErrors(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-4">
+      <p className="font-semibold text-ink-900">{name}</p>
+      <div>
+        <StarInput value={rating} onChange={setRating} id={`rating-${productId}`} />
+        <FieldError id={`rating-${productId}-err`} message={fields.rating} />
+      </div>
+      <AField id={`rt-${productId}`} name="title" label="Headline (optional)" required={false} maxLength={120} defaultValue={initial?.title ?? ''} error={fields.title} />
+      <div>
+        <label htmlFor={`rb-${productId}`} className="mb-1.5 block text-sm font-medium text-ink-900">
+          Your review
+        </label>
+        <textarea
+          id={`rb-${productId}`}
+          name="body"
+          rows={5}
+          required
+          minLength={20}
+          maxLength={4000}
+          defaultValue={initial?.body ?? ''}
+          placeholder="What did you build with it? How was the quality, the guide, the delivery?"
+          className="field"
+          aria-invalid={Boolean(fields.body)}
+        />
+        <FieldError id={`rb-${productId}-err`} message={fields.body} />
+      </div>
+      {initial?.status === 'approved' && <p className="text-xs text-ink-400">Editing sends your review back for a quick check before it shows again.</p>}
+      <FormError message={error} />
+      <div className="flex gap-3">
+        <Button type="submit" disabled={busy}>
+          {busy ? 'Sending…' : initial ? 'Save changes' : 'Submit review'}
+        </Button>
+        <button type="button" onClick={onCancel} className="text-sm font-semibold text-ink-600 hover:text-brand-700">
+          Cancel
+        </button>
+      </div>
+    </form>
   )
 }
 

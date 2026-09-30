@@ -86,6 +86,7 @@ the API checks the role on every request).
 | Orders | Search/filter; move orders placed → confirmed → packed → shipped (courier + tracking no.) → delivered, with customer emails; cancel (stock returns); refund through Razorpay in one click; GST invoice |
 | Products | Create/edit (photos, datasheet PDF, specs, badges, kit contents), quick stock edits, hide from shop |
 | Coupons | Create percent, rupees-off or free-shipping codes with a minimum order, dates and use limits; switch off any time; see paid orders and discount given per code |
+| Reviews | Approve or reject reviews from verified buyers, and reply publicly; the product rating updates automatically |
 | Inbox | Contact messages and part requests, workshop requests (new → contacted → scheduled → closed), newsletter list + CSV export |
 | Projects | Review community submissions, edit, add a photo, publish/feature/reject |
 | Articles | Markdown editor with a formatting toolbar, live preview and image upload (headings, **bold**/*italic*, links, bullet and numbered lists, tables, code, images, diagram placeholders); cover image, drafts |
@@ -111,7 +112,7 @@ placeholder that needs real client input.
 - [x] Error monitoring (Sentry for the site and API; friendly error screen) + analytics (GA4 e-commerce events, after consent)
 - [x] Email polish: branded HTML emails (with text versions), email confirmation on sign-up / email change, newsletter welcome + unsubscribe page + one-click unsubscribe, optional Resend audience sync
 - [x] Coupons: percent / rupees off / free shipping, minimum order, dates, total and per-customer limits; applied before GST (shown on the invoice); uses reserved at checkout and given back if unpaid; admin screen with usage
-- [ ] Reviews from verified buyers (so ratings can be shown honestly)
+- [x] Reviews from verified buyers: only customers with a delivered order can review (guest orders count once the email is confirmed); admin approval + public replies; ratings on product pages, cards and Google product data come only from approved reviews
 - [ ] Courier integration (e.g. Shiprocket) for automatic tracking updates
 - [ ] Automated browser tests for sign-in, checkout and admin
 

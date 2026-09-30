@@ -164,6 +164,10 @@ export const emails = {
         ...(order.courier && order.tracking_number ? [`Courier: ${order.courier} · tracking number ${order.tracking_number}`] : []),
       ],
       button: { label: 'Track your order', url: `${siteUrl}/shop/track?order=${order.id}` },
+      after:
+        status === 'delivered'
+          ? [`Built something with it? Review your parts to help other builders: ${siteUrl}/account?tab=reviews`]
+          : [],
     }),
 
   refundIssued: (siteUrl, order) =>

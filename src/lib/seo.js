@@ -103,8 +103,8 @@ export const schema = {
     itemListElement: items.map((it, i) => ({ '@type': 'ListItem', position: i + 1, name: it.name, item: absoluteUrl(it.path) })),
   }),
 
-  // Ratings are deliberately omitted until real, verified reviews exist —
-  // marking up placeholder ratings would violate Google's guidelines.
+  // The rating comes only from approved reviews by verified buyers, and is
+  // left out until at least one exists (Google's review-snippet rules).
   product: (p) => ({
     '@context': 'https://schema.org',
     '@type': 'Product',
@@ -126,6 +126,9 @@ export const schema = {
       itemCondition: 'https://schema.org/NewCondition',
       seller: { '@id': `${SITE.url}/#organization` },
     },
+    ...(p.reviews > 0 && p.rating > 0
+      ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: p.rating, reviewCount: p.reviews, bestRating: 5, worstRating: 1 } }
+      : {}),
   }),
 
   article: (a, path) => ({

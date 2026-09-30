@@ -4,6 +4,7 @@ import { query } from '../middleware/validate.js'
 import { cached } from '../middleware/cache.js'
 import { notFound } from '../lib/errors.js'
 import { product } from '../lib/serializers.js'
+import { publicReview } from '../services/reviews.js'
 
 export const catalog = new Hono()
 
@@ -151,3 +152,33 @@ catalog.get('/products/:id', cached(60), async (c) => {
   )
   return c.json({ product: product(config)(row), related: related.map(product(config)) })
 })
+
+// GET /products/:id/reviews — approved reviews (newest first) and the
+// rating summary. Only verified buyers can write them (routes/account.js).
+catalog.get(
+  '/products/:id/reviews',
+  cached(60),
+  query(z.object({ page: z.coerce.number().int().min(1).max(500).default(1) })),
+  async (c) => {
+    const { db } = c.var.svc
+    const id = c.req.param('id')
+    const { page } = c.req.valid('query')
+    const PER_PAGE = 10
+    const [rows, dist] = await Promise.all([
+      db.all(`SELECT * FROM reviews WHERE product_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT ? OFFSET ?`, [id, PER_PAGE + 1, (page - 1) * PER_PAGE]),
+      db.all(`SELECT rating, COUNT(*) AS n FROM reviews WHERE product_id = ? AND status = 'approved' GROUP BY rating`, [id]),
+    ])
+    const count = dist.reduce((n, r) => n + r.n, 0)
+    const sum = dist.reduce((n, r) => n + r.rating * r.n, 0)
+    return c.json({
+      summary: {
+        average: count ? Math.round((sum / count) * 10) / 10 : 0,
+        count,
+        distribution: Object.fromEntries([5, 4, 3, 2, 1].map((s) => [s, dist.find((r) => r.rating === s)?.n ?? 0])),
+      },
+      reviews: rows.slice(0, PER_PAGE).map(publicReview),
+      page,
+      hasMore: rows.length > PER_PAGE,
+    })
+  },
+)

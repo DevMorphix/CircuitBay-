@@ -13,6 +13,7 @@ import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES } from '../storage/index.js'
 import { emails } from '../services/email.js'
 import { FULFILMENT_STATUSES, cancelAndRestockStatements, creditNoteStatements } from '../services/orders.js'
 import { creditNoteResponse, invoiceResponse } from '../services/invoice.js'
+import { publicReview, recomputeRatingStatement } from '../services/reviews.js'
 
 // Everything under /api/admin requires role=admin. Admins are the accounts
 // whose email is listed in ADMIN_EMAILS when they register.
@@ -38,6 +39,7 @@ admin.get('/stats', async (c) => {
         (SELECT COUNT(*) FROM contact_messages WHERE status = 'new') AS messages,
         (SELECT COUNT(*) FROM workshop_requests WHERE status = 'new') AS workshops,
         (SELECT COUNT(*) FROM projects WHERE status = 'pending') AS projects,
+        (SELECT COUNT(*) FROM reviews WHERE status = 'pending') AS reviews,
         (SELECT COUNT(*) FROM orders WHERE status = 'cancelled' AND paid_at IS NOT NULL AND refunded_at IS NULL) AS refundsNeeded`),
   ])
   return c.json({
@@ -433,6 +435,58 @@ admin.patch('/workshop-requests/:id', body(z.object({ status: z.enum(['new', 'co
   await c.var.svc.db.run('UPDATE workshop_requests SET status = ? WHERE id = ?', [c.req.valid('json').status, c.req.param('id')])
   return c.json({ ok: true })
 })
+
+// -------------------------------------------------------------- reviews --
+const adminReview = (r) => ({
+  ...publicReview(r),
+  status: r.status,
+  productId: r.product_id,
+  productName: r.product_name,
+  orderId: r.order_id,
+  customerEmail: r.customer_email,
+  updatedAt: r.updated_at,
+})
+
+admin.get('/reviews', query(z.object({ status: z.enum(['pending', 'approved', 'rejected']).optional(), ...page })), async (c) => {
+  const { status, page: pg, limit } = c.req.valid('query')
+  const rows = await c.var.svc.db.all(
+    `SELECT r.*, p.name AS product_name, u.email AS customer_email
+       FROM reviews r JOIN products p ON p.id = r.product_id LEFT JOIN users u ON u.id = r.user_id
+      ${status ? 'WHERE r.status = ?' : ''}
+      ORDER BY r.status = 'pending' DESC, r.updated_at DESC LIMIT ? OFFSET ?`,
+    [...(status ? [status] : []), limit, (pg - 1) * limit],
+  )
+  return c.json({ reviews: rows.map(adminReview) })
+})
+
+// Approve / reject, and/or post a public reply ('' removes it)
+admin.patch(
+  '/reviews/:id',
+  body(z.object({ status: z.enum(['pending', 'approved', 'rejected']).optional(), reply: z.string().trim().max(2000).optional() })),
+  async (c) => {
+    const { db } = c.var.svc
+    const d = c.req.valid('json')
+    const review = await db.first('SELECT product_id FROM reviews WHERE id = ?', [c.req.param('id')])
+    if (!review) throw notFound('Review not found.')
+    const now = Date.now()
+    await db.batch([
+      {
+        sql: `UPDATE reviews SET status = COALESCE(?, status),
+                reply = CASE WHEN ? IS NULL THEN reply WHEN ? = '' THEN NULL ELSE ? END,
+                replied_at = CASE WHEN ? IS NULL THEN replied_at WHEN ? = '' THEN NULL ELSE ? END,
+                updated_at = ? WHERE id = ?`,
+        params: [d.status, d.reply, d.reply, d.reply, d.reply, d.reply, now, now, c.req.param('id')],
+      },
+      recomputeRatingStatement(review.product_id),
+    ])
+    const row = await db.first(
+      `SELECT r.*, p.name AS product_name, u.email AS customer_email
+         FROM reviews r JOIN products p ON p.id = r.product_id LEFT JOIN users u ON u.id = r.user_id WHERE r.id = ?`,
+      [c.req.param('id')],
+    )
+    return c.json({ review: adminReview(row) })
+  },
+)
 
 // ------------------------------------------------------------- projects --
 admin.get('/projects', inboxQuery, async (c) => {

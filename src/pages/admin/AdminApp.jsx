@@ -13,6 +13,7 @@ const OrderDetail = section(() => import('./Orders.jsx'), 'OrderDetail')
 const Products = section(() => import('./Products.jsx'), 'Products')
 const ProductEditor = section(() => import('./Products.jsx'), 'ProductEditor')
 const Coupons = section(() => import('./Coupons.jsx'), 'Coupons')
+const Reviews = section(() => import('./Reviews.jsx'), 'Reviews')
 const Inbox = section(() => import('./Inbox.jsx'), 'Inbox')
 const ProjectsAdmin = section(() => import('./ProjectsAdmin.jsx'), 'ProjectsAdmin')
 const Articles = section(() => import('./Articles.jsx'), 'Articles')
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/admin/orders', label: 'Orders', icon: 'box' },
   { to: '/admin/products', label: 'Products', icon: 'kit' },
   { to: '/admin/coupons', label: 'Coupons', icon: 'tag' },
+  { to: '/admin/reviews', label: 'Reviews', icon: 'star' },
   { to: '/admin/inbox', label: 'Inbox', icon: 'mail' },
   { to: '/admin/projects', label: 'Projects', icon: 'users' },
   { to: '/admin/articles', label: 'Articles', icon: 'book' },
@@ -130,6 +132,7 @@ export function AdminApp() {
                 <Route path="products/new" element={<ProductEditor />} />
                 <Route path="products/:id" element={<ProductEditor />} />
                 <Route path="coupons" element={<Coupons />} />
+                <Route path="reviews" element={<Reviews />} />
                 <Route path="inbox" element={<Inbox />} />
                 <Route path="projects" element={<ProjectsAdmin />} />
                 <Route path="articles" element={<Articles />} />

@@ -24,14 +24,14 @@ export function Badges({ badges }) {
   )
 }
 
-// Renders only when the product has real reviews (none until the reviews
-// system exists) — we never show placeholder ratings to customers.
+// Renders only when the product has approved reviews from verified buyers —
+// we never show placeholder ratings to customers.
 export function Rating({ value, count }) {
   if (!count || !value) return null
   return (
     <span className="inline-flex items-center gap-1 text-xs text-ink-600">
       <Icon name="star" size={14} className="fill-brand-500 text-brand-500" />
-      <span className="font-semibold text-ink-900">{value}</span>
+      <span className="font-semibold text-ink-900">{Number(value).toFixed(1)}</span>
       {count != null && <span className="text-ink-400">({count})</span>}
     </span>
   )

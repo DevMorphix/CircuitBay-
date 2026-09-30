@@ -108,13 +108,13 @@ rupees, with `pricePaise` alongside.
 |---|---|
 | Health | `GET /api/health` |
 | Auth | `POST /api/auth/register`, `/login`, `/logout`, `GET /api/auth/me`, `POST /api/auth/otp/request`, `/otp/verify`, `/password/forgot`, `/password/reset`, `/password/change`, `/email/verify`, `/email/resend` |
-| Catalog | `GET /api/categories`, `GET /api/products?category=&q=&level=&brand=&type=&minPrice=&maxPrice=&inStock=&kit=&ids=&sort=&page=&limit=` (includes facets), `GET /api/products/:id` |
+| Catalog | `GET /api/categories`, `GET /api/products?category=&q=&level=&brand=&type=&minPrice=&maxPrice=&inStock=&kit=&ids=&sort=&page=&limit=` (includes facets), `GET /api/products/:id`, `GET /api/products/:id/reviews?page=` (approved reviews + rating summary) |
 | Content | `GET /api/articles?category=&q=&featured=&page=`, `GET /api/articles/:slug`, `GET /api/projects` |
 | Checkout | `POST /api/checkout/quote` (cart totals with a coupon), `POST /api/checkout` (optional `couponCode`) → Razorpay order, `POST /api/checkout/verify`, `POST /api/checkout/failed`, `POST /api/webhooks/razorpay` |
 | Orders | `GET /api/orders/track?orderId=&contact=` (guest), `GET /api/me/orders`, `GET /api/me/orders/:id` |
-| Account | `PATCH /api/me/profile`, `GET/POST/PUT/DELETE /api/me/addresses[/:id]`, `GET /api/me/wishlist`, `PUT/DELETE /api/me/wishlist/:productId` |
+| Account | `PATCH /api/me/profile`, `GET/POST/PUT/DELETE /api/me/addresses[/:id]`, `GET /api/me/wishlist`, `PUT/DELETE /api/me/wishlist/:productId`, `GET /api/me/reviews`, `PUT/DELETE /api/me/reviews/:productId` (verified buyers) |
 | Forms | `POST /api/forms/contact`, `/workshop-requests`, `/newsletter`, `/newsletter/unsubscribe`, `/newsletter/one-click` (RFC 8058, mail apps), `/project-submissions` |
-| Admin | `GET /api/admin/stats`; products CRUD + stock; `PUT /api/admin/categories/:slug`; orders list/detail + `POST /orders/:id/status`; coupons list/create/edit (`/api/admin/coupons`); inbox lists; project moderation; articles CRUD; `POST /api/admin/uploads` (multipart) |
+| Admin | `GET /api/admin/stats`; products CRUD + stock; `PUT /api/admin/categories/:slug`; orders list/detail + `POST /orders/:id/status`; coupons list/create/edit (`/api/admin/coupons`); reviews moderation (`GET /api/admin/reviews`, `PATCH /api/admin/reviews/:id`); inbox lists; project moderation; articles CRUD; `POST /api/admin/uploads` (multipart) |
 | Media | `GET /media/<key>` |
 
 ### Checkout flow (frontend)

@@ -1175,3 +1175,85 @@ describe('coupons', () => {
     expect(list.body.coupons.find((c) => c.code === 'WELCOME10')).toMatchObject({ paidOrders: 1, discountGiven: 100 })
   })
 })
+
+describe('reviews from verified buyers', () => {
+  const { app, db, svc } = setup()
+  const admin = client(app)
+  const buyer = client(app)
+  const stranger = client(app)
+  const PRODUCT = 'esp32-iot-starter'
+  const review = { rating: 5, title: 'Great first IoT kit', body: 'Had the Wi-Fi thermometer running in an evening. Clear guide.' }
+  let orderId
+
+  beforeAll(async () => {
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    await buyer.post('/api/auth/register', { email: 'buyer@example.com', password: 'buyer password', name: 'Priya Sharma' })
+    await stranger.post('/api/auth/register', { email: 'stranger@example.com', password: 'stranger pass' })
+    const co = await buyer.post('/api/checkout', checkoutBody([{ productId: PRODUCT, qty: 1 }]))
+    orderId = co.body.orderId
+    await buyer.post('/api/checkout/verify', { orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: 'pay_rev', razorpay_signature: 'fake-ok' })
+  })
+
+  it('only lets buyers review once the order is delivered', async () => {
+    expect((await client(app).put(`/api/me/reviews/${PRODUCT}`, review)).status).toBe(401)
+    expect((await stranger.put(`/api/me/reviews/${PRODUCT}`, review)).status).toBe(403)
+    expect((await buyer.put(`/api/me/reviews/${PRODUCT}`, review)).status).toBe(403) // paid, not delivered yet
+    expect((await buyer.get('/api/me/reviews')).body.reviewable).toEqual([])
+
+    await admin.post(`/api/admin/orders/${orderId}/status`, { status: 'delivered' })
+    expect((await db.first('SELECT status FROM orders WHERE id = ?', [orderId])).status).toBe('delivered')
+    expect(svc.email.sent.at(-1).text).toContain('/account?tab=reviews')
+    expect((await buyer.get('/api/me/reviews')).body.reviewable).toMatchObject([{ productId: PRODUCT }])
+  })
+
+  it('validates, then queues the review for approval (not public yet)', async () => {
+    const short = await buyer.put(`/api/me/reviews/${PRODUCT}`, { rating: 5, body: 'ok' })
+    expect(short.status).toBe(400)
+    expect(short.body.error.details[0].path).toBe('body')
+
+    const res = await buyer.put(`/api/me/reviews/${PRODUCT}`, review)
+    expect(res.status).toBe(201)
+    expect(res.body.review).toMatchObject({ productId: PRODUCT, rating: 5, status: 'pending' })
+    expect((await buyer.get('/api/me/reviews')).body).toMatchObject({ reviewable: [], reviews: [{ status: 'pending' }] })
+    expect((await client(app).get(`/api/products/${PRODUCT}/reviews`)).body.summary.count).toBe(0)
+    expect((await admin.get('/api/admin/stats')).body.inbox.reviews).toBe(1)
+  })
+
+  it('approval publishes it, updates the rating, and shows the reply', async () => {
+    const { id } = (await admin.get('/api/admin/reviews?status=pending')).body.reviews[0]
+    expect((await stranger.patch(`/api/admin/reviews/${id}`, { status: 'approved' })).status).toBe(403)
+    const res = await admin.patch(`/api/admin/reviews/${id}`, { status: 'approved', reply: 'Thanks, Priya!' })
+    expect(res.body.review).toMatchObject({ status: 'approved', customerEmail: 'buyer@example.com', reply: 'Thanks, Priya!' })
+
+    const pub = await client(app).get(`/api/products/${PRODUCT}/reviews`)
+    expect(pub.body.summary).toEqual({ average: 5, count: 1, distribution: { 5: 1, 4: 0, 3: 0, 2: 0, 1: 0 } })
+    expect(pub.body.reviews[0]).toMatchObject({ author: 'Priya S.', verified: true, title: 'Great first IoT kit', reply: 'Thanks, Priya!' })
+    expect(pub.body.reviews[0].customerEmail).toBeUndefined()
+    expect((await client(app).get(`/api/products/${PRODUCT}`)).body.product).toMatchObject({ rating: 5, reviews: 1 })
+  })
+
+  it('editing sends it back for approval and takes it off the rating meanwhile', async () => {
+    expect((await buyer.put(`/api/me/reviews/${PRODUCT}`, { ...review, rating: 3 })).status).toBe(200)
+    expect(await db.first('SELECT rating, reviews_count FROM products WHERE id = ?', [PRODUCT])).toEqual({ rating: 0, reviews_count: 0 })
+    expect((await db.first('SELECT COUNT(*) AS n FROM reviews')).n).toBe(1) // still one review per customer per product
+    const { id } = (await admin.get('/api/admin/reviews?status=pending')).body.reviews[0]
+    await admin.patch(`/api/admin/reviews/${id}`, { status: 'rejected' })
+    expect((await client(app).get(`/api/products/${PRODUCT}/reviews`)).body.summary.count).toBe(0)
+  })
+
+  it('a guest order counts once the account email is confirmed', async () => {
+    const guestCo = await client(app).post('/api/checkout', { ...checkoutBody([{ productId: 'blink-sense-kit', qty: 1 }]), contact: { name: 'Stranger', email: 'stranger@example.com', phone: '98765 43210' } })
+    await db.run(`UPDATE orders SET status = 'delivered', paid_at = ? WHERE id = ?`, [Date.now(), guestCo.body.orderId])
+    expect((await stranger.put('/api/me/reviews/blink-sense-kit', review)).status).toBe(403) // email not confirmed
+    await db.run(`UPDATE users SET email_verified = 1 WHERE email = 'stranger@example.com'`)
+    expect((await stranger.put('/api/me/reviews/blink-sense-kit', review)).status).toBe(201)
+    expect((await stranger.del('/api/me/reviews/blink-sense-kit')).status).toBe(200)
+  })
+
+  it('the name shown is first name + initial', async () => {
+    const { authorName } = await import('../src/services/reviews.js')
+    expect(authorName('Priya Sharma')).toBe('Priya S.')
+    expect(authorName(' arjun  k  nair ')).toBe('arjun N.')
+    expect(authorName('')).toBe('Verified buyer')
+  })
+})

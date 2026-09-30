@@ -62,6 +62,7 @@ export function Dashboard() {
                   <InboxRow label="New messages" value={data.inbox.messages} to="/admin/inbox?tab=messages" />
                   <InboxRow label="Workshop requests" value={data.inbox.workshops} to="/admin/inbox?tab=workshops" />
                   <InboxRow label="Projects to review" value={data.inbox.projects} to="/admin/projects?status=pending" />
+                  <InboxRow label="Product reviews to approve" value={data.inbox.reviews} to="/admin/reviews" />
                 </ul>
               </Panel>
             </div>

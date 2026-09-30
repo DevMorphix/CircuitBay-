@@ -6,6 +6,7 @@ import { Photo } from '../../components/ui/Card.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { ProductCard, Badges, Rating } from '../../components/shop/ProductCard.jsx'
 import { ProjectCard } from '../../components/content/ProjectCard.jsx'
+import { ProductReviews } from '../../components/shop/Reviews.jsx'
 import { QtyStepper } from '../../components/shop/QtyStepper.jsx'
 import { formatPrice, getProduct, products, shopCategories } from '../../content/shopData.js'
 import { projects } from '../../content/siteContent.js'
@@ -268,16 +269,7 @@ function TabBody({ tab, product }) {
         </p>
       )
     case 'Reviews':
-      return (
-        <div>
-          <Rating value={product.rating} count={product.reviews} />
-          {/* TODO: reviews system (verified buyers only) */}
-          <p className={product.reviews ? 'mt-3' : ''}>
-            No reviews yet. Bought this?{' '}
-            <Link to="/projects#submit" className="font-semibold text-brand-700">Share what you built with it →</Link>
-          </p>
-        </div>
-      )
+      return <ProductReviews productId={product.id} />
     case 'Q&A':
       return (
         <p>
