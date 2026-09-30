@@ -99,12 +99,31 @@ test('each story-reel stop shows exactly one chapter, fully visible', async ({ p
     page.evaluate(() =>
       [...document.querySelectorAll('#top .absolute.inset-x-0.top-0.flex')].map((el) => Number(getComputedStyle(el).opacity)).filter((o) => o > 0.01),
     )
-  for (let stop = 0; stop < 5; stop++) {
+  // 5 chapter stops, then the reel's last frame
+  for (let stop = 0; stop < 6; stop++) {
     const opacities = await visibleChapters()
     expect(opacities, `stop ${stop}`).toEqual([1])
     await page.keyboard.press('PageDown')
     await settled(page)
   }
+})
+
+test('the story reel stops on its last frame before moving on', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const lastFrame = await page.evaluate(() => {
+    const reel = document.getElementById('top')
+    return reel.offsetTop + reel.offsetHeight - window.innerHeight
+  })
+  let y = 0
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press('PageDown')
+    y = await settled(page)
+  }
+  expect(Math.abs(y - lastFrame)).toBeLessThanOrEqual(2) // 6th stop = last frame
+  await page.keyboard.press('PageDown')
+  await settled(page)
+  await expect(page.getByRole('heading', { name: 'A bay for people who build.' })).toBeInViewport()
 })
 
 test('other pages scroll normally', async ({ page }) => {

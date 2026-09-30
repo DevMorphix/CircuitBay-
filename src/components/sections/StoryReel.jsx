@@ -375,15 +375,15 @@ export function StoryReel() {
       className="relative snap-start snap-always bg-white"
       style={{ height: `${TRACK_VH}vh` }}
     >
-      {/* A checkpoint for every chapter after the first (the page stops
-          where that chapter's copy is fully shown) — see useCheckpointScroll */}
-      {chapters.slice(1).map((chapter) => (
+      {/* Checkpoints: every chapter after the first (where its copy is
+          fully shown), then the reel's last frame — see useCheckpointScroll */}
+      {[...chapters.slice(1).map((chapter) => [chapter.id, restPoint(chapter)]), ['last-frame', 1]].map(([key, at]) => (
         <div
-          key={`stop-${chapter.id}`}
+          key={`stop-${key}`}
           aria-hidden="true"
           data-checkpoint="step"
           className="pointer-events-none absolute inset-x-0 h-px snap-start snap-always"
-          style={{ top: `calc((${TRACK_VH}vh - 100svh) * ${restPoint(chapter)})` }}
+          style={{ top: `calc((${TRACK_VH}vh - 100svh) * ${at})` }}
         />
       ))}
       <div className="sticky top-0 h-[100svh] overflow-hidden bg-surface-soft">

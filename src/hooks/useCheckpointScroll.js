@@ -85,7 +85,8 @@ export function useCheckpointScroll() {
       const from = window.scrollY
       const dist = to - from
       if (Math.abs(dist) < 2) return
-      const duration = Math.min(900, Math.max(500, 450 + (Math.abs(dist) / window.innerHeight) * 250))
+      // Unhurried: ~0.9 s for a screen-length step, up to 1.4 s for longer ones
+      const duration = Math.min(1400, Math.max(850, 650 + (Math.abs(dist) / window.innerHeight) * 300))
       const t0 = performance.now()
       animating = true
       const frame = (t) => {
