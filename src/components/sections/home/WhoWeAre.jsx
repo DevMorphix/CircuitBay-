@@ -8,7 +8,7 @@ export function WhoWeAre() {
   return (
     <Section tone="light" id="who-we-are" snap>
       <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
-        <Reveal>
+        <Reveal from="left">
           <p className="eyebrow mb-4">{whoWeAre.eyebrow}</p>
           <h2 className="font-heading text-3xl font-semibold tracking-tight text-ink-900 sm:text-5xl">
             {whoWeAre.headline}
@@ -25,7 +25,7 @@ export function WhoWeAre() {
             {whoWeAre.cta.label}
           </ArrowLink>
         </Reveal>
-        <Reveal delay={0.1}>
+        <Reveal from="right" delay={0.1}>
           <Photo label={whoWeAre.photoLabel} className="aspect-[4/3] rounded-2xl shadow-[0_20px_50px_rgba(15,31,69,0.12)]" />
         </Reveal>
       </div>

@@ -10,7 +10,7 @@ export function ForEducators() {
   return (
     <Section tone="dark" id="educators" snap>
       <div className="grid gap-12 lg:grid-cols-[1fr_1.3fr] lg:gap-16">
-        <Reveal className="lg:sticky lg:top-28 lg:self-start">
+        <Reveal from="left" className="lg:sticky lg:top-28 lg:self-start">
           <p className="eyebrow mb-4">{educators.eyebrow}</p>
           <h2 className="font-heading text-3xl font-semibold tracking-tight text-white sm:text-5xl">
             {educators.headline}
@@ -58,8 +58,10 @@ export function ForEducators() {
       )}
 
       <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-        {['Workshop in progress', 'Students wiring a build', 'Maker lab', 'Teacher training'].map((label) => (
-          <Photo key={label} label={label} className="aspect-[4/3] rounded-xl opacity-90" />
+        {['Workshop in progress', 'Students wiring a build', 'Maker lab', 'Teacher training'].map((label, i) => (
+          <Reveal key={label} delay={i * 0.06}>
+            <Photo label={label} className="aspect-[4/3] rounded-xl opacity-90" />
+          </Reveal>
         ))}
       </div>
     </Section>

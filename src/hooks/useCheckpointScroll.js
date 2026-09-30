@@ -18,6 +18,7 @@ import { useReducedMotion } from './useReducedMotion.js'
 const TALL = 1.05 // sections taller than this many screens are read with normal scrolling
 const THRESHOLD = 12 // px of wheel movement before a step starts
 const MOMENTUM_GAP_MS = 220 // wheel events closer than this are one gesture
+const COOLDOWN_MS = 350 // after a glide, stragglers from the same flick (same direction) are ignored
 const EDGE = 4 // px tolerance
 
 // Checkpoints (scroll positions), plus the tall sections' scroll ranges.
@@ -79,12 +80,15 @@ export function useCheckpointScroll() {
     let raf = 0
     let lastWheel = 0 // time of the previous wheel event
     let swallowUntil = 0 // ignore the rest of a gesture that already stepped
+    let cooldownUntil = 0 // briefly after a glide lands…
+    let glideDir = 0 // …ignore wheel events in the direction it went
     let acc = 0
 
     const glide = (to) => {
       const from = window.scrollY
       const dist = to - from
       if (Math.abs(dist) < 2) return
+      glideDir = Math.sign(dist)
       // Unhurried: ~0.9 s for a screen-length step, up to 1.4 s for longer ones
       const duration = Math.min(1400, Math.max(850, 650 + (Math.abs(dist) / window.innerHeight) * 300))
       const t0 = performance.now()
@@ -93,7 +97,10 @@ export function useCheckpointScroll() {
         const k = Math.min(1, (t - t0) / duration)
         window.scrollTo({ top: from + dist * ease(k), behavior: 'instant' })
         if (k < 1) raf = requestAnimationFrame(frame)
-        else animating = false
+        else {
+          animating = false
+          cooldownUntil = performance.now() + COOLDOWN_MS
+        }
       }
       raf = requestAnimationFrame(frame)
     }
@@ -107,7 +114,8 @@ export function useCheckpointScroll() {
 
       // During a glide, and for the momentum tail of the gesture that
       // started it, keep the page still
-      if (animating || (!newGesture && now < swallowUntil)) {
+      const sameWay = Math.sign(e.deltaY) === glideDir
+      if (animating || (sameWay && now < cooldownUntil) || (!newGesture && now < swallowUntil)) {
         e.preventDefault()
         swallowUntil = now + MOMENTUM_GAP_MS
         return

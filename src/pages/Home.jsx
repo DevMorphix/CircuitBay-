@@ -9,6 +9,7 @@ import { FeaturedBlogs } from '../components/sections/home/FeaturedBlogs.jsx'
 import { ClosingCta } from '../components/sections/home/ClosingCta.jsx'
 import { schema } from '../lib/seo.js'
 import { useCheckpointScroll } from '../hooks/useCheckpointScroll.js'
+import { ScrollRevealScope } from '../components/ui/Reveal.jsx'
 
 // Order after the reel (Part A): Who we are → Beliefs → Students →
 // Educators → Projects → Blogs → Closing CTA → Footer.
@@ -19,13 +20,16 @@ export function Home() {
   return (
     <PageShell seo={{ path: '/', preloadImage: '/hero/frames/frame_001.webp', jsonLd: [schema.organization(), schema.website()] }}>
       <StoryReel />
-      <WhoWeAre />
-      <Beliefs />
-      <ForStudents />
-      <ForEducators />
-      <FeaturedProjects />
-      <FeaturedBlogs />
-      <ClosingCta />
+      {/* Every section's content animates with the scroll, both ways */}
+      <ScrollRevealScope>
+        <WhoWeAre />
+        <Beliefs />
+        <ForStudents />
+        <ForEducators />
+        <FeaturedProjects />
+        <FeaturedBlogs />
+        <ClosingCta />
+      </ScrollRevealScope>
     </PageShell>
   )
 }

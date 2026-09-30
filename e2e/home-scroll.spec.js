@@ -126,6 +126,45 @@ test('the story reel stops on its last frame before moving on', async ({ page })
   await expect(page.getByRole('heading', { name: 'A bay for people who build.' })).toBeInViewport()
 })
 
+// Every scroll-linked element in view (upper part of the screen): its opacity
+const revealsInView = (page, sectionId) =>
+  page.evaluate((id) => {
+    const vh = window.innerHeight
+    return [...document.querySelectorAll(`#${id} [style*="opacity"]`)]
+      .map((el) => ({ top: el.getBoundingClientRect().top, opacity: Number(getComputedStyle(el).opacity) }))
+      .filter((r) => r.top > 0 && r.top < vh * 0.65)
+      .map((r) => r.opacity)
+  }, sectionId)
+
+test('section content animates in with the scroll, and rewinds when scrolling back', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const who = page.locator('#who-we-are h2').locator('xpath=ancestor::div[contains(@style,"opacity")][1]')
+  await expect(who).toHaveCSS('opacity', '0') // still below the fold
+
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press('PageDown')
+    await settled(page)
+  }
+  // At the "Who we are" stop everything in view is fully in place
+  await expect(page.getByRole('heading', { name: 'A bay for people who build.' })).toBeInViewport()
+  const shown = await revealsInView(page, 'who-we-are')
+  expect(shown.length).toBeGreaterThan(0)
+  for (const o of shown) expect(o).toBeGreaterThan(0.98)
+
+  // Back up to the reel's last frame: the section's content has rewound
+  await page.keyboard.press('PageUp')
+  await settled(page)
+  expect(Number(await who.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(0.5)
+
+  // Every section stop shows its content fully (nothing left half-faded)
+  for (const id of ['who-we-are', 'beliefs', 'students', 'educators', 'projects', 'learn', 'start']) {
+    await page.locator(`#${id}`).evaluate((el) => window.scrollTo({ top: el.offsetTop - 80, behavior: 'instant' }))
+    await page.waitForTimeout(250)
+    for (const o of await revealsInView(page, id)) expect(o, `#${id}`).toBeGreaterThan(0.98)
+  }
+})
+
 test('other pages scroll normally', async ({ page }) => {
   await page.goto('/about')
   await page.waitForLoadState('networkidle')

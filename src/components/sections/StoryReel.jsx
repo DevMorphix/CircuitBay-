@@ -1,22 +1,14 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { motion, transform, useScroll, useMotionValueEvent, useTransform } from 'framer-motion'
+import { motion, useScroll, useMotionValueEvent } from 'framer-motion'
 import { story } from '../../content/siteContent.js'
 import { Button } from '../ui/Button.jsx'
 import { useFramePreloader } from '../../hooks/useFramePreloader.js'
 import { useReducedMotion } from '../../hooks/useReducedMotion.js'
+import { useProgressMap } from '../../hooks/useProgressMap.js'
 
 const { chapters, frameCount, framePath } = story
 
 const ACTIVE_EPSILON = 0.002
-
-// Maps scroll progress through keyframes in JS. (Passing the arrays to
-// useTransform directly lets Framer hand the fade to the browser's native
-// ScrollTimeline, whose range doesn't exactly match `scrollYProgress` — the
-// previous chapter's copy was left faintly visible at checkpoint stops.)
-function useProgressMap(progress, input, output) {
-  const [map] = useState(() => transform(input, output))
-  return useTransform(progress, (p) => map(p))
-}
 const TRACK_VH = 520
 
 // Scroll progress where a chapter's copy is fully visible (between its
