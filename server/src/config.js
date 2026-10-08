@@ -39,7 +39,7 @@ const schema = z
     BUSINESS_ADDRESS: z.string().default('Registered address — TODO_CLIENT'),
     BUSINESS_STATE_CODE: z.string().regex(/^\d{2}$/).optional(), // e.g. 32 = Kerala
 
-    PAYMENTS_PROVIDER: z.enum(['razorpay', 'fake']).default('fake'),
+    PAYMENTS_PROVIDER: z.enum(['razorpay', 'fake', 'disabled']).default('fake'), // disabled = checkout closed,
     RAZORPAY_KEY_ID: z.string().optional(),
     RAZORPAY_KEY_SECRET: z.string().optional(),
     RAZORPAY_WEBHOOK_SECRET: z.string().optional(),

@@ -1,5 +1,7 @@
 name = "circuitbay-api"
 main = "src/worker.js"
+# Once circuitbay.in is on this Cloudflare account:
+# routes = [{ pattern = "api.circuitbay.in", custom_domain = true }]
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
@@ -11,13 +13,11 @@ crons = ["*/10 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "circuitbay"
-# TODO: run `npx wrangler d1 create circuitbay` and paste the id here
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "f53e900e-91c3-4731-81bb-98e55976af6b"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "BUCKET"
-# TODO: run `npx wrangler r2 bucket create circuitbay-media`
 bucket_name = "circuitbay-media"
 
 # Non-secret configuration. Secrets (RAZORPAY_KEY_SECRET,
@@ -27,15 +27,23 @@ bucket_name = "circuitbay-media"
 # `npx wrangler secret put NAME` — never commit them here.
 [vars]
 APP_ENV = "production"
-SITE_URL = "https://circuitbay.in"
-API_PUBLIC_URL = "https://api.circuitbay.in"
-CORS_ORIGINS = "https://circuitbay.in,https://www.circuitbay.in,https://shop.circuitbay.in"
-COOKIE_DOMAIN = ".circuitbay.in"
-PAYMENTS_PROVIDER = "razorpay"
-EMAIL_PROVIDER = "resend"
+# No custom domain yet: set these to the workers.dev / pages.dev URLs after the
+# first deploy. With the domain, use:
+#   SITE_URL = "https://circuitbay.in"
+#   API_PUBLIC_URL = "https://api.circuitbay.in"
+#   CORS_ORIGINS = "https://circuitbay.in,https://www.circuitbay.in,https://shop.circuitbay.in"
+#   COOKIE_DOMAIN = ".circuitbay.in"
+# SITE_URL = "https://<project>.pages.dev"
+API_PUBLIC_URL = "https://circuitbay-api.devmorphix.workers.dev"
+# CORS_ORIGINS = "https://<project>.pages.dev"
+# "disabled" closes checkout until Razorpay keys are added, then set "razorpay"
+PAYMENTS_PROVIDER = "disabled"
+# "resend" once RESEND_API_KEY is set as a secret (console = emails only in logs)
+EMAIL_PROVIDER = "console"
 EMAIL_FROM = "CircuitBay <hello@circuitbay.in>"
-SMS_PROVIDER = "msg91"
-# ADMIN_EMAILS = "founder@circuitbay.in"
+# "console" until MSG91 + DLT are approved (OTPs only appear in `wrangler tail`)
+SMS_PROVIDER = "console"
+ADMIN_EMAILS = "circuitbay@gmail.com"
 # MEDIA_PUBLIC_URL = "https://media.circuitbay.in"
 # RAZORPAY_KEY_ID = "rzp_live_xxx"
 # MSG91_OTP_TEMPLATE_ID = "xxx"

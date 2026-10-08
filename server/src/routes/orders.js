@@ -96,6 +96,7 @@ const checkoutSchema = z.object({
 // stock is held for HOLD_MINUTES; unpaid holds are released by the sweeper.
 orders.post('/checkout', limitByIp('checkout', { limit: 20, windowSec: 600 }), body(checkoutSchema), async (c) => {
   const { db, payments } = c.var.svc
+  if (payments.name === 'disabled') throw new HttpError(503, 'checkout_closed', 'Online checkout opens soon. Please check back shortly.')
   const d = c.req.valid('json')
 
   const { ids, qtyById, byId, totals: listTotals } = await priceCart(db, d.items, d.shippingMethod, null)

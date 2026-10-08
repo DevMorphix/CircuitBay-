@@ -280,6 +280,22 @@ describe('checkout → payment → tracking', () => {
   })
 })
 
+describe('payments disabled', () => {
+  it('closes checkout without creating an order or holding stock', async () => {
+    const { app, db } = setup({ PAYMENTS_PROVIDER: 'disabled' })
+    const before = (await db.first(`SELECT stock FROM products WHERE id = 'esp32-iot-starter'`)).stock
+    const res = await client(app).post('/api/checkout', checkoutBody())
+    expect(res.status).toBe(503)
+    expect(res.body.error.code).toBe('checkout_closed')
+    expect((await db.first('SELECT COUNT(*) AS n FROM orders')).n).toBe(0)
+    expect((await db.first(`SELECT stock FROM products WHERE id = 'esp32-iot-starter'`)).stock).toBe(before)
+  })
+
+  it('is allowed in production', () => {
+    expect(() => loadConfig({ APP_ENV: 'production', PAYMENTS_PROVIDER: 'disabled' })).not.toThrow()
+  })
+})
+
 describe('Razorpay signatures + webhook', () => {
   const env = { APP_ENV: 'test', PAYMENTS_PROVIDER: 'razorpay', RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 'key_secret', RAZORPAY_WEBHOOK_SECRET: 'hook_secret' }
 

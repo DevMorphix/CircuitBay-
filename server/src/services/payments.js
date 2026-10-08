@@ -8,7 +8,9 @@ import { hmacSha256Hex, randomId, timingSafeEqual } from '../lib/crypto.js'
 //   verifyWebhook(rawBody, signatureHeader)      -> boolean
 //   refund({ paymentId, amountPaise, notes })    -> { id, status }
 export function createPaymentProvider(config) {
-  return config.PAYMENTS_PROVIDER === 'razorpay' ? razorpay(config) : fake()
+  if (config.PAYMENTS_PROVIDER === 'razorpay') return razorpay(config)
+  if (config.PAYMENTS_PROVIDER === 'disabled') return disabled()
+  return fake()
 }
 
 // Razorpay Standard Checkout:
@@ -77,5 +79,25 @@ function fake() {
     async refund() {
       return { id: randomId(14, 'rfnd_fake_'), status: 'processed' }
     },
+  }
+}
+
+// Before a gateway is set up: checkout is refused up front (see
+// POST /checkout), so no orders are created and nothing can be paid.
+function disabled() {
+  const off = () => {
+    throw new Error('Payments are disabled (PAYMENTS_PROVIDER=disabled)')
+  }
+  return {
+    name: 'disabled',
+    publicKey: null,
+    createOrder: off,
+    async verifyPayment() {
+      return false
+    },
+    async verifyWebhook() {
+      return false
+    },
+    refund: off,
   }
 }
