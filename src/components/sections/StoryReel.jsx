@@ -1,13 +1,19 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { motion, useScroll, useMotionValueEvent, useTransform } from 'framer-motion'
+import { motion, useScroll, useMotionValueEvent } from 'framer-motion'
 import { story } from '../../content/siteContent.js'
 import { Button } from '../ui/Button.jsx'
 import { useFramePreloader } from '../../hooks/useFramePreloader.js'
 import { useReducedMotion } from '../../hooks/useReducedMotion.js'
+import { useProgressMap } from '../../hooks/useProgressMap.js'
 
 const { chapters, frameCount, framePath } = story
 
 const ACTIVE_EPSILON = 0.002
+const TRACK_VH = 520
+
+// Scroll progress where a chapter's copy is fully visible (between its
+// fade-in and fade-out in ChapterCopy): the page's checkpoint for it
+const restPoint = ({ progress: [start, end] }) => start + (end - start) * 0.48
 
 // Static per-chapter geometry, precomputed once — `chapters` never changes
 // at runtime, so there's no reason to recompute spans/buffers on every tick.
@@ -140,12 +146,12 @@ const ChapterCopy = memo(function ChapterCopy({ chapter, scrollYProgress, mounte
   // over the first few percent of scroll.
   const isFirst = start === 0
 
-  const opacity = useTransform(
+  const opacity = useProgressMap(
     scrollYProgress,
     [start, fadeIn, fadeOutStart, end],
     [isFirst ? 1 : 0, 1, 1, chapter.kind === 'closer' ? 1 : 0],
   )
-  const y = useTransform(scrollYProgress, [start, fadeIn], [isFirst ? 0 : 24, 0])
+  const y = useProgressMap(scrollYProgress, [start, fadeIn], [isFirst ? 0 : 24, 0])
 
   if (!mounted) return null
 
@@ -236,7 +242,7 @@ const ChapterScrim = memo(function ChapterScrim({ chapter, scrollYProgress, moun
   const [start, end] = chapter.progress
   const span = end - start
   const isFirst = start === 0
-  const opacity = useTransform(
+  const opacity = useProgressMap(
     scrollYProgress,
     [start, start + span * 0.18, end - span * 0.22, end],
     [isFirst ? 1 : 0, 1, 1, chapter.kind === 'closer' ? 1 : 0],
@@ -260,7 +266,7 @@ const ChapterScrim = memo(function ChapterScrim({ chapter, scrollYProgress, moun
 })
 
 function ProgressRail({ scrollYProgress }) {
-  const scaleY = useTransform(scrollYProgress, [0, 1], [0, 1])
+  const scaleY = useProgressMap(scrollYProgress, [0, 1], [0, 1])
   return (
     <div className="pointer-events-none absolute right-5 top-1/2 hidden h-40 w-px -translate-y-1/2 bg-ink-900/10 sm:block">
       <motion.div
@@ -357,9 +363,21 @@ export function StoryReel() {
     <section
       id="top"
       ref={trackRef}
-      className="relative snap-start bg-white"
-      style={{ height: '520vh' }}
+      data-checkpoint="step"
+      className="relative snap-start snap-always bg-white"
+      style={{ height: `${TRACK_VH}vh` }}
     >
+      {/* Checkpoints: every chapter after the first (where its copy is
+          fully shown), then the reel's last frame — see useCheckpointScroll */}
+      {[...chapters.slice(1).map((chapter) => [chapter.id, restPoint(chapter)]), ['last-frame', 1]].map(([key, at]) => (
+        <div
+          key={`stop-${key}`}
+          aria-hidden="true"
+          data-checkpoint="step"
+          className="pointer-events-none absolute inset-x-0 h-px snap-start snap-always"
+          style={{ top: `calc((${TRACK_VH}vh - 100svh) * ${at})` }}
+        />
+      ))}
       <div className="sticky top-0 h-[100svh] overflow-hidden bg-surface-soft">
         {!firstReady && (
           <div className="absolute inset-0 animate-pulse-soft bg-brand-50" />

@@ -105,6 +105,95 @@ describe('auth: email + password', () => {
   })
 })
 
+describe('email verification', () => {
+  const { app, svc } = setup()
+  const tokenFrom = (mail) => decodeURIComponent(mail.text.match(/verify-email\?token=([^\s]+)/)[1])
+
+  it('emails a confirm link on sign-up; the link verifies once', async () => {
+    const api = client(app)
+    await api.post('/api/auth/register', { email: 'v@example.com', password: 'verify me please' })
+    const mail = svc.email.sent.at(-1)
+    expect(mail).toMatchObject({ to: 'v@example.com', subject: 'Confirm your email for CircuitBay' })
+    expect(mail.html).toContain('<a href="http://localhost:5173/verify-email?token=')
+    expect((await api.get('/api/auth/me')).body.user.emailVerified).toBe(false)
+
+    const token = tokenFrom(mail)
+    expect((await client(app).post('/api/auth/email/verify', { token })).body).toMatchObject({ ok: true, email: 'v@example.com' })
+    expect((await api.get('/api/auth/me')).body.user.emailVerified).toBe(true)
+    expect((await client(app).post('/api/auth/email/verify', { token })).status).toBe(400)
+  })
+
+  it('resends only for signed-in, unverified users; a new link replaces the old one', async () => {
+    expect((await client(app).post('/api/auth/email/resend', {})).status).toBe(401)
+    const api = client(app)
+    await api.post('/api/auth/register', { email: 'w@example.com', password: 'verify me please' })
+    const first = tokenFrom(svc.email.sent.at(-1))
+    expect((await api.post('/api/auth/email/resend', {})).status).toBe(200)
+    const second = tokenFrom(svc.email.sent.at(-1))
+    expect(second).not.toBe(first)
+    expect((await client(app).post('/api/auth/email/verify', { token: first })).status).toBe(400)
+    expect((await client(app).post('/api/auth/email/verify', { token: second })).status).toBe(200)
+    expect((await api.post('/api/auth/email/resend', {})).body.alreadyVerified).toBe(true)
+  })
+
+  it('changing the profile email un-verifies it and sends a new link', async () => {
+    const api = client(app)
+    await api.post('/api/auth/register', { email: 'x1@example.com', password: 'verify me please' })
+    await client(app).post('/api/auth/email/verify', { token: tokenFrom(svc.email.sent.at(-1)) })
+    const res = await api.patch('/api/me/profile', { email: 'x2@example.com' })
+    expect(res.body.user).toMatchObject({ email: 'x2@example.com', emailVerified: false })
+    expect(svc.email.sent.at(-1).to).toBe('x2@example.com')
+  })
+})
+
+describe('newsletter emails', () => {
+  const { app, svc, db } = setup({ RESEND_AUDIENCE_ID: 'aud_test' })
+  const api = client(app)
+
+  it('welcomes new subscribers once, with one-click unsubscribe headers', async () => {
+    const before = svc.email.sent.length
+    await api.post('/api/forms/newsletter', { email: 'news@example.com' })
+    await api.post('/api/forms/newsletter', { email: 'news@example.com' })
+    expect(svc.email.sent.length).toBe(before + 1)
+    const mail = svc.email.sent.at(-1)
+    expect(mail.subject).toBe("You're on the CircuitBay list")
+    expect(mail.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+    expect(mail.headers['List-Unsubscribe']).toMatch(/^<http:\/\/localhost:8787\/api\/forms\/newsletter\/one-click\?token=/)
+    expect(mail.html).toContain('/unsubscribe?token=')
+    expect(svc.email.audience.at(-1)).toEqual({ email: 'news@example.com', subscribed: true })
+  })
+
+  it('unsubscribes from the page link and from the one-click post', async () => {
+    const { unsubscribe_token: token } = await db.first('SELECT unsubscribe_token FROM newsletter_subscribers WHERE email = ?', ['news@example.com'])
+    expect((await api.post('/api/forms/newsletter/unsubscribe', { token })).status).toBe(200)
+    expect((await db.first('SELECT status FROM newsletter_subscribers WHERE email = ?', ['news@example.com'])).status).toBe('unsubscribed')
+    expect(svc.email.audience.at(-1)).toEqual({ email: 'news@example.com', subscribed: false })
+    expect((await api.post('/api/forms/newsletter/unsubscribe', { token: 'not-a-real-token' })).status).toBe(404)
+
+    // Re-subscribing sends the welcome again; the mail app's one-click post works without JSON
+    await api.post('/api/forms/newsletter', { email: 'news@example.com' })
+    const oneClick = await app.request(`/api/forms/newsletter/one-click?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'List-Unsubscribe=One-Click',
+    })
+    expect(oneClick.status).toBe(204)
+    expect((await db.first('SELECT status FROM newsletter_subscribers WHERE email = ?', ['news@example.com'])).status).toBe('unsubscribed')
+  })
+})
+
+describe('email templates', () => {
+  it('have an HTML and a text version, and escape customer-supplied text', async () => {
+    const { emails } = await import('../src/services/email.js')
+    const order = { id: 'CB1', contact_name: '<script>x</script> Maker', total_paise: 118000, invoice_no: 'CB/26-27/000001' }
+    const mail = emails.orderConfirmed('https://circuitbay.in', order, [{ name: 'ESP32 <kit>', qty: 2, unit_price_paise: 50000 }])
+    expect(mail.text).toContain('ESP32 <kit> × 2 — ₹1,000.00')
+    expect(mail.text).toContain('₹1,180.00')
+    expect(mail.html).toContain('ESP32 &lt;kit&gt;')
+    expect(mail.html).not.toContain('<script>')
+  })
+})
+
 describe('auth: phone OTP', () => {
   const { app, svc } = setup()
 
@@ -191,6 +280,22 @@ describe('checkout → payment → tracking', () => {
   })
 })
 
+describe('payments disabled', () => {
+  it('closes checkout without creating an order or holding stock', async () => {
+    const { app, db } = setup({ PAYMENTS_PROVIDER: 'disabled' })
+    const before = (await db.first(`SELECT stock FROM products WHERE id = 'esp32-iot-starter'`)).stock
+    const res = await client(app).post('/api/checkout', checkoutBody())
+    expect(res.status).toBe(503)
+    expect(res.body.error.code).toBe('checkout_closed')
+    expect((await db.first('SELECT COUNT(*) AS n FROM orders')).n).toBe(0)
+    expect((await db.first(`SELECT stock FROM products WHERE id = 'esp32-iot-starter'`)).stock).toBe(before)
+  })
+
+  it('is allowed in production', () => {
+    expect(() => loadConfig({ APP_ENV: 'production', PAYMENTS_PROVIDER: 'disabled' })).not.toThrow()
+  })
+})
+
 describe('Razorpay signatures + webhook', () => {
   const env = { APP_ENV: 'test', PAYMENTS_PROVIDER: 'razorpay', RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 'key_secret', RAZORPAY_WEBHOOK_SECRET: 'hook_secret' }
 
@@ -211,7 +316,7 @@ describe('Razorpay signatures + webhook', () => {
          'standard', 44900, 7900, 8082, 60882, 'razorpay', 'order_WH1', ?, ?)`,
       [now, now],
     )
-    await db.run(`INSERT INTO order_items VALUES ('CBTEST0001', 'esp32-devkit', 'ESP32 DevKit V1', 44900, 1)`)
+    await db.run(`INSERT INTO order_items (order_id, product_id, name, unit_price_paise, qty) VALUES ('CBTEST0001', 'esp32-devkit', 'ESP32 DevKit V1', 44900, 1)`)
 
     const send = async (payload, eventId) => {
       const raw = JSON.stringify(payload)
@@ -372,6 +477,24 @@ describe('admin', () => {
     expect(track.body.order).toMatchObject({ status: 'shipped', courier: 'Delhivery', trackingNumber: 'DL123' })
   })
 
+  it('cancels a paid order (restocking it) and tracks the refund', async () => {
+    const co = await customer.post('/api/checkout', checkoutBody([{ productId: 'hc-sr04', qty: 2 }]))
+    await customer.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: 'pay_refund', razorpay_signature: 'fake-ok' })
+    const stockBefore = (await customer.get('/api/stock?ids=hc-sr04')).body.stock['hc-sr04']
+
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refunded`, {})).status).toBe(400) // not cancelled yet
+    await admin.post(`/api/admin/orders/${co.body.orderId}/status`, { status: 'cancelled', notifyCustomer: false })
+    expect((await customer.get('/api/stock?ids=hc-sr04')).body.stock['hc-sr04']).toBe(stockBefore + 2)
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBeGreaterThanOrEqual(1)
+
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refunded`, { note: 'rfnd_123' })).status).toBe(200)
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refunded`, {})).status).toBe(409)
+    const detail = (await admin.get(`/api/admin/orders/${co.body.orderId}`)).body.order
+    expect(detail.refundNote).toBe('rfnd_123')
+    expect(detail.events.map((e) => e.status)).toContain('refunded')
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBe(0)
+  })
+
   it('uploads to storage and serves it back via /media', async () => {
     const form = new FormData()
     form.set('file', new File([new Uint8Array([137, 80, 78, 71])], 'kit.png', { type: 'image/png' }))
@@ -387,6 +510,69 @@ describe('admin', () => {
     bad.set('file', new File(['<html>'], 'x.html', { type: 'text/html' }))
     expect((await admin.post('/api/admin/uploads', bad)).status).toBe(400)
     expect((await customer.post('/api/admin/uploads', form)).status).toBe(403)
+  })
+
+  it('edits articles with list and table blocks and loads them back for the editor', async () => {
+    const body = [
+      { type: 'h2', id: 'intro', text: 'Intro' },
+      { type: 'list', items: ['one', 'two'] },
+      { type: 'table', head: ['a', 'b'], rows: [['1', '2']] },
+    ]
+    const saved = await admin.put('/api/admin/articles/test-post', { title: 'Test post', category: 'tutorials', body, status: 'draft' })
+    expect(saved.status).toBe(200)
+    const loaded = await admin.get('/api/admin/articles/test-post')
+    expect(loaded.body.article.body).toEqual(body)
+    expect(loaded.body.article.status).toBe('draft')
+    expect((await customer.get('/api/articles/test-post')).status).toBe(404) // drafts stay private
+    expect((await admin.put('/api/admin/articles/bad', { title: 'Bad', category: 'x', body: [{ type: 'list', items: [] }] })).status).toBe(400)
+  })
+
+  it('accepts exactly what the admin article editor sends, and round-trips it', async () => {
+    const { slugify } = await import('../../src/pages/admin/format.js')
+    const { blocksToMarkdown, markdownToBlocks } = await import('../../src/lib/markdown.js')
+    // What a person types into the Markdown editor
+    const typed = [
+      'The INA219 measures bus voltage and current.',
+      '',
+      '## Wiring it up',
+      '',
+      '- Up to 26 V bus voltage',
+      '-  I2C interface ',
+      '',
+      '| Spec | Value |',
+      '| --- | --- |',
+      '| Bus voltage | 0–26 V |',
+      '| Interface | I2C |',
+      '',
+      '```',
+      'Wire.begin();',
+      '```',
+    ].join('\n')
+    const body = markdownToBlocks(typed)
+    const slug = slugify('INA219 current sensor: a quick guide')
+    expect(slug).toBe('ina219-current-sensor-a-quick-guide')
+    const res = await admin.put(`/api/admin/articles/${slug}`, { title: 'INA219 current sensor: a quick guide', category: 'tutorials', body, status: 'published' })
+    expect(res.status).toBe(200)
+    const loaded = (await admin.get(`/api/admin/articles/${slug}`)).body.article.body
+    expect(loaded[1]).toEqual({ type: 'h2', id: 'wiring-it-up', text: 'Wiring it up' })
+    expect(loaded[2]).toEqual({ type: 'list', items: ['Up to 26 V bus voltage', 'I2C interface'] })
+    expect(loaded[3]).toEqual({ type: 'table', head: ['Spec', 'Value'], rows: [['Bus voltage', '0–26 V'], ['Interface', 'I2C']] })
+    expect(loaded[4]).toEqual({ type: 'code', text: 'Wire.begin();' })
+    // Loading it back into the editor gives Markdown that saves to the same thing
+    expect(markdownToBlocks(blocksToMarkdown(loaded))).toEqual(loaded)
+    expect((await customer.get(`/api/articles/${slug}`)).status).toBe(200)
+  })
+
+  it('explains when site publishing is not configured', async () => {
+    const res = await admin.post('/api/admin/site/rebuild', {})
+    expect(res.status).toBe(501)
+    expect(res.body.error.message).toMatch(/SITE_DEPLOY_HOOK_URL/)
+    expect((await customer.post('/api/admin/site/rebuild', {})).status).toBe(403)
+  })
+
+  it('returns raw image keys to the product editor', async () => {
+    const list = await admin.get('/api/admin/products?q=esp32-devkit')
+    expect(list.body.products[0]).toMatchObject({ id: 'esp32-devkit', imageKeys: [], datasheetKey: null })
   })
 
   it('moderates project submissions', async () => {
@@ -454,6 +640,322 @@ describe('stock under concurrency', () => {
   })
 })
 
+describe('GST invoices', () => {
+  const SELLER = { BUSINESS_GSTIN: '32ABCDE1234F1Z5', BUSINESS_STATE_CODE: '32', BUSINESS_LEGAL_NAME: 'CircuitBay Test Pvt Ltd' }
+  const pay = (api, co) =>
+    api.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: `pay_${co.body.orderId}`, razorpay_signature: 'fake-ok' })
+  const html = async (res) => (typeof res.body === 'string' ? res.body : JSON.stringify(res.body))
+
+  it('formats amounts in words and financial years the Indian way', async () => {
+    const { amountInWords, financialYear } = await import('../src/lib/money.js')
+    expect(amountInWords(12345678_50)).toBe('Rupees One Crore Twenty-Three Lakh Forty-Five Thousand Six Hundred Seventy-Eight and Paise Fifty Only')
+    expect(amountInWords(100)).toBe('Rupees One Only')
+    expect(financialYear(Date.parse('2026-03-31T12:00:00+05:30'))).toBe('25-26')
+    expect(financialYear(Date.parse('2026-04-01T00:30:00+05:30'))).toBe('26-27')
+  })
+
+  it('issues sequential invoice numbers on payment, with CGST+SGST for same-state delivery', async () => {
+    const { app, db } = setup(SELLER)
+    const api = client(app)
+    const first = await api.post('/api/checkout', checkoutBody()) // Kerala → same state as the seller
+    expect((await api.post('/api/orders/invoice', { orderId: first.body.orderId, contact: 'buyer@example.com' })).status).toBe(404) // not paid yet
+    await pay(api, first)
+    const second = await api.post('/api/checkout', { ...checkoutBody(), address: { ...checkoutBody().address, state: 'Karnataka' } })
+    await pay(api, second)
+
+    const nos = await db.all('SELECT id, invoice_no, place_of_supply FROM orders ORDER BY invoiced_at, invoice_no')
+    const fy = (await import('../src/lib/money.js')).financialYear()
+    expect(nos.map((o) => o.invoice_no)).toEqual([`CB/${fy}/000001`, `CB/${fy}/000002`])
+    expect(nos.map((o) => o.place_of_supply)).toEqual(['32', '29'])
+    expect(nos[0].invoice_no.length).toBeLessThanOrEqual(16)
+
+    const intra = await html(await api.post('/api/orders/invoice', { orderId: first.body.orderId, contact: '98765 43210' }))
+    expect(intra).toContain('Tax Invoice')
+    expect(intra).toContain('32ABCDE1234F1Z5')
+    expect(intra).toContain('CGST')
+    expect(intra).not.toContain('>IGST<')
+    expect(intra).toContain('Place of supply: <strong>Kerala (32)</strong>')
+
+    const inter = await html(await api.post('/api/orders/invoice', { orderId: second.body.orderId, contact: 'buyer@example.com' }))
+    expect(inter).toContain('>IGST<')
+    expect(inter).toContain('Karnataka (29)')
+    // Pay once more for the same order: no second number is consumed
+    await pay(api, first)
+    expect((await db.first('SELECT last FROM invoice_counters')).last).toBe(2)
+  })
+
+  it('charges GST per product rate and prints matching totals', async () => {
+    const { app, db } = setup(SELLER)
+    await db.run(`UPDATE products SET gst_rate = 5, hsn_code = '85437099' WHERE id = 'hc-sr04'`)
+    const api = client(app)
+    const co = await api.post('/api/checkout', checkoutBody([{ productId: 'hc-sr04', qty: 2 }, { productId: 'esp32-devkit', qty: 1 }]))
+    // hc-sr04: ₹99 × 2 at 5% = 9.90; esp32: ₹449 at 18% = 80.82
+    expect(co.body.totals.tax).toBeCloseTo(90.72, 2)
+    await pay(api, co)
+    const inv = await html(await api.post('/api/orders/invoice', { orderId: co.body.orderId, contact: 'buyer@example.com' }))
+    expect(inv).toContain('85437099')
+    expect(inv).toContain(`₹${(co.body.totals.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+  })
+
+  it('only gives the invoice to the buyer, the account owner and admins', async () => {
+    const { app } = setup({ ...SELLER, ADMIN_EMAILS: 'admin@example.com' })
+    const owner = client(app)
+    await owner.post('/api/auth/register', { email: 'owner@example.com', password: 'password123' })
+    const co = await owner.post('/api/checkout', checkoutBody())
+    await pay(owner, co)
+
+    expect((await owner.get(`/api/me/orders/${co.body.orderId}/invoice`)).status).toBe(200)
+    const stranger = client(app)
+    await stranger.post('/api/auth/register', { email: 'stranger@example.com', password: 'password123' })
+    expect((await stranger.get(`/api/me/orders/${co.body.orderId}/invoice`)).status).toBe(404)
+    expect((await stranger.post('/api/orders/invoice', { orderId: co.body.orderId, contact: 'stranger@example.com' })).status).toBe(404)
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    expect((await admin.get(`/api/admin/orders/${co.body.orderId}/invoice`)).status).toBe(200)
+    expect((await owner.get('/api/me/orders')).body.orders[0].invoiceNo).toMatch(/^CB\/\d{2}-\d{2}\/\d{6}$/)
+  })
+
+  it('issues one credit note when an invoiced order is cancelled, and none for unpaid orders', async () => {
+    const { app, db } = setup({ ...SELLER, ADMIN_EMAILS: 'admin@example.com' })
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    const buyer = client(app)
+    const paid = await buyer.post('/api/checkout', checkoutBody())
+    await pay(buyer, paid)
+    const unpaid = await buyer.post('/api/checkout', checkoutBody([{ productId: 'dht11', qty: 1 }]))
+
+    await admin.post(`/api/admin/orders/${paid.body.orderId}/status`, { status: 'cancelled', note: 'Out of stock at the warehouse', notifyCustomer: false })
+    const fy = (await import('../src/lib/money.js')).financialYear()
+    const cn = await db.first('SELECT * FROM credit_notes WHERE order_id = ?', [paid.body.orderId])
+    const order = await db.first('SELECT * FROM orders WHERE id = ?', [paid.body.orderId])
+    expect(cn).toMatchObject({ number: `CN/${fy}/000001`, invoice_no: order.invoice_no, reason: 'Out of stock at the warehouse', total_paise: order.total_paise, tax_paise: order.tax_paise })
+
+    // The page shows the credit note, referencing the original invoice
+    const page = (await buyer.post('/api/orders/credit-note', { orderId: paid.body.orderId, contact: 'buyer@example.com' })).body
+    expect(page).toContain('Credit Note')
+    expect(page).toContain(`CN/${fy}/000001`)
+    expect(page).toContain(`Against invoice <strong>${order.invoice_no}</strong>`)
+    expect(page).toContain('Out of stock at the warehouse')
+
+    // Cancelling an unpaid (never invoiced) order issues nothing
+    await db.run(`UPDATE orders SET status = 'placed' WHERE id = ?`, [unpaid.body.orderId]) // pretend it reached fulfilment without payment
+    await admin.post(`/api/admin/orders/${unpaid.body.orderId}/status`, { status: 'cancelled', notifyCustomer: false })
+    expect((await db.first('SELECT COUNT(*) AS n FROM credit_notes')).n).toBe(1)
+    expect((await buyer.post('/api/orders/credit-note', { orderId: unpaid.body.orderId, contact: 'buyer@example.com' })).status).toBe(404)
+
+    // Order data carries the number for the UI; strangers can't fetch it
+    expect((await admin.get('/api/admin/orders')).body.orders.find((o) => o.id === paid.body.orderId).creditNoteNo).toBe(`CN/${fy}/000001`)
+    expect((await client(app).post('/api/orders/credit-note', { orderId: paid.body.orderId, contact: 'x@example.com' })).status).toBe(404)
+    expect((await admin.get(`/api/admin/orders/${paid.body.orderId}/credit-note`)).status).toBe(200)
+  })
+
+  it('rejects delivery states that are not Indian states/UTs', async () => {
+    const { app } = setup()
+    const res = await client(app).post('/api/checkout', { ...checkoutBody(), address: { ...checkoutBody().address, state: 'Atlantis' } })
+    expect(res.status).toBe(400)
+    expect(res.body.error.details[0].path).toBe('address.state')
+  })
+})
+
+describe('refunds through the payment provider', () => {
+  const insertCancelledPaid = (db, id, paymentId = 'pay_R1') => {
+    const now = Date.now()
+    return db.run(
+      `INSERT INTO orders (id, status, contact_name, contact_email, contact_phone, ship_line1, ship_city, ship_state, ship_pin,
+         shipping_method, subtotal_paise, shipping_paise, tax_paise, total_paise, payment_provider, payment_order_id, payment_id, paid_at, created_at, updated_at)
+       VALUES (?, 'cancelled', 'R', 'r@example.com', '+919876543210', 'x', 'Kochi', 'Kerala', '682001', 'standard', 10000, 7900, 1800, 19700, 'razorpay', ?, ?, ?, ?, ?)`,
+      [id, `order_${id}`, paymentId, now, now, now],
+    )
+  }
+  const adminFor = async (app) => {
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    return admin
+  }
+
+  it('refunds a cancelled order once, emails the customer, and clears "refunds needed"', async () => {
+    const { app, db, svc } = setup()
+    await insertCancelledPaid(db, 'CBREFUND01')
+    const admin = await adminFor(app)
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBe(1)
+
+    const res = await admin.post('/api/admin/orders/CBREFUND01/refund', { reason: 'Customer changed mind' })
+    expect(res.status).toBe(200)
+    expect(res.body.refundId).toMatch(/^rfnd_fake_/)
+    expect(svc.email.sent.at(-1)).toMatchObject({ to: 'r@example.com', subject: 'Refund for order CBREFUND01' })
+    expect((await admin.post('/api/admin/orders/CBREFUND01/refund', {})).status).toBe(409)
+    expect((await admin.get('/api/admin/stats')).body.inbox.refundsNeeded).toBe(0)
+    const detail = (await admin.get('/api/admin/orders/CBREFUND01')).body.order
+    expect(detail.refundNote).toBe(res.body.refundId)
+  })
+
+  it('refuses to refund an order that is not cancelled', async () => {
+    const { app } = setup()
+    const admin = await adminFor(app)
+    const co = await admin.post('/api/checkout', checkoutBody())
+    await admin.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: 'pay_live1', razorpay_signature: 'fake-ok' })
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/refund`, {})).status).toBe(400)
+  })
+
+  it('calls Razorpay with the full amount, and releases the claim if Razorpay rejects it', async () => {
+    const env = { APP_ENV: 'test', PAYMENTS_PROVIDER: 'razorpay', RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 'key_secret', RAZORPAY_WEBHOOK_SECRET: 'hook_secret' }
+    const { app, db } = setup(env)
+    await insertCancelledPaid(db, 'CBREFUND02', 'pay_ABC')
+    const admin = await adminFor(app)
+    const calls = []
+    const realFetch = globalThis.fetch
+    let fail = true
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), body: JSON.parse(init.body), auth: init.headers.Authorization })
+      return fail
+        ? new Response(JSON.stringify({ error: { description: 'The balance is insufficient' } }), { status: 400 })
+        : new Response(JSON.stringify({ id: 'rfnd_REAL1', status: 'processed' }), { status: 200 })
+    }
+    try {
+      const rejected = await admin.post('/api/admin/orders/CBREFUND02/refund', {})
+      expect(rejected.status).toBe(502)
+      expect(rejected.body.error.message).toContain('The balance is insufficient')
+      expect((await db.first(`SELECT refunded_at FROM orders WHERE id = 'CBREFUND02'`)).refunded_at).toBeNull()
+
+      fail = false
+      const ok = await admin.post('/api/admin/orders/CBREFUND02/refund', {})
+      expect(ok.body.refundId).toBe('rfnd_REAL1')
+      expect(calls[1]).toMatchObject({ url: 'https://api.razorpay.com/v1/payments/pay_ABC/refund', body: { amount: 19700, speed: 'normal' } })
+      expect(calls[1].auth).toBe(`Basic ${btoa('rzp_test_x:key_secret')}`)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  it('reopens "refunds needed" when Razorpay reports a refund failed', async () => {
+    const env = { APP_ENV: 'test', PAYMENTS_PROVIDER: 'razorpay', RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 'key_secret', RAZORPAY_WEBHOOK_SECRET: 'hook_secret' }
+    const { app, db } = setup(env)
+    await insertCancelledPaid(db, 'CBREFUND03', 'pay_XYZ')
+    await db.run(`UPDATE orders SET refunded_at = ?, refund_note = 'rfnd_X' WHERE id = 'CBREFUND03'`, [Date.now()])
+    const raw = JSON.stringify({ event: 'refund.failed', payload: { refund: { entity: { id: 'rfnd_X', payment_id: 'pay_XYZ', amount: 19700 } } } })
+    const res = await app.request('/api/webhooks/razorpay', {
+      method: 'POST',
+      body: raw,
+      headers: { 'content-type': 'application/json', 'x-razorpay-signature': await hmacSha256Hex('hook_secret', raw), 'x-razorpay-event-id': 'evt_rf1' },
+    })
+    expect(res.status).toBe(200)
+    const o = await db.first(`SELECT refunded_at, refund_note FROM orders WHERE id = 'CBREFUND03'`)
+    expect(o).toMatchObject({ refunded_at: null, refund_note: 'failed: rfnd_X' })
+  })
+})
+
+describe('error monitoring', () => {
+  const DSN = 'https://abc123@o1.ingest.sentry.io/42'
+
+  async function withFetchSpy(fn) {
+    const calls = []
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), init })
+      return new Response('{}', { status: 200 })
+    }
+    try {
+      await fn(calls)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  }
+
+  it('reports unexpected errors to Sentry once, without query strings, and hides details from the visitor', async () => {
+    await withFetchSpy(async (calls) => {
+      const { app, svc } = setup({ SENTRY_DSN: DSN, RELEASE: 'abc123' })
+      svc.db.all = async () => {
+        throw new Error('D1 is down')
+      }
+      const res = await app.request('/api/categories?secret=1', { headers: { cookie: 'cb_session=xyz' } })
+      expect(res.status).toBe(500)
+      const body = await res.json()
+      expect(body.error.message).not.toContain('D1')
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0].url).toBe('https://o1.ingest.sentry.io/api/42/envelope/')
+      expect(calls[0].init.headers['X-Sentry-Auth']).toContain('sentry_key=abc123')
+      const [header, type, event] = calls[0].init.body.split('\n').map((l) => JSON.parse(l))
+      expect(header.dsn).toBe(DSN)
+      expect(type).toEqual({ type: 'event' })
+      expect(event.exception.values[0]).toMatchObject({ type: 'Error', value: 'D1 is down' })
+      expect(event.exception.values[0].stacktrace.frames.length).toBeGreaterThan(0)
+      expect(event.request).toEqual({ method: 'GET', url: 'http://localhost/api/categories' })
+      expect(event.release).toBe('abc123')
+      expect(calls[0].init.body).not.toContain('xyz')
+
+      // The same error again within a minute isn't re-sent
+      await app.request('/api/categories?x=2')
+      await new Promise((r) => setTimeout(r, 10))
+      expect(calls).toHaveLength(1)
+    })
+  })
+
+  it('sends nothing without a DSN, and never for expected errors (4xx)', async () => {
+    await withFetchSpy(async (calls) => {
+      const { app, svc } = setup()
+      svc.db.all = async () => {
+        throw new Error('boom')
+      }
+      expect((await app.request('/api/categories')).status).toBe(500)
+      const withDsn = setup({ SENTRY_DSN: DSN })
+      expect((await withDsn.app.request('/api/products/nope')).status).toBe(404)
+      await new Promise((r) => setTimeout(r, 10))
+      expect(calls).toHaveLength(0)
+    })
+  })
+
+  it('parses V8 stack traces into Sentry frames, oldest first', async () => {
+    const { parseStack } = await import('../src/lib/monitoring.js')
+    const frames = parseStack('Error: x\n    at inner (file:///app/src/a.js:10:5)\n    at outer (file:///app/node_modules/hono/b.js:20:7)')
+    expect(frames).toEqual([
+      { function: 'outer', filename: 'file:///app/node_modules/hono/b.js', lineno: 20, colno: 7, in_app: false },
+      { function: 'inner', filename: 'file:///app/src/a.js', lineno: 10, colno: 5, in_app: true },
+    ])
+  })
+})
+
+describe('site publishing', () => {
+  it('calls the deploy hook when configured', async () => {
+    const calls = []
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), method: init?.method })
+      return new Response('{"success":true}', { status: 200 })
+    }
+    try {
+      const { app } = setup({ SITE_DEPLOY_HOOK_URL: 'https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/test' })
+      const admin = client(app)
+      await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+      const res = await admin.post('/api/admin/site/rebuild', {})
+      expect(res.status).toBe(200)
+      expect(calls).toEqual([{ url: 'https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/test', method: 'POST' }])
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+})
+
+describe('catalog for the site build', () => {
+  it('lists every product kits-first by default, with the fields the pages need', async () => {
+    const { app } = setup()
+    const res = await client(app).get('/api/products?category=all&limit=48')
+    expect(res.body.total).toBe(17)
+    expect(res.body.products.slice(0, 4).every((p) => p.kit)).toBe(true)
+    expect(Object.keys(res.body.products[0])).toEqual(expect.arrayContaining(['id', 'name', 'price', 'stock', 'badges', 'specs', 'images', 'inside']))
+  })
+
+  it('returns article SEO titles and body for prerendering', async () => {
+    const { app } = setup()
+    const a = (await client(app).get('/api/articles/which-sensor-for-obstacle-detection')).body.article
+    expect(a.seoTitle).toBe('Ultrasonic vs IR vs ToF: Obstacle Sensors Compared')
+    expect(a.body.some((b) => b.type === 'table')).toBe(true)
+    // Drafts are not published
+    expect((await client(app).get('/api/articles/airloo-build-log')).status).toBe(404)
+  })
+})
+
 describe('response cache', () => {
   it('serves repeat catalog reads from cache and refreshes after admin edits', async () => {
     const { app } = setup()
@@ -491,5 +993,445 @@ describe('response cache', () => {
     const hit = await app.request('/api/categories', { headers: { origin: 'http://localhost:5173' } })
     expect(hit.headers.get('x-cache')).toBe('HIT')
     expect(hit.headers.get('access-control-allow-origin')).toBe('http://localhost:5173')
+  })
+})
+
+describe('article markdown', () => {
+  it('converts every existing article to Markdown and back without changes', async () => {
+    const { blocksToMarkdown, markdownToBlocks } = await import('../../src/lib/markdown.js')
+    const { default: articles } = await import('../../src/content/data/articles.js')
+    for (const a of articles) expect(markdownToBlocks(blocksToMarkdown(a.body)), a.slug).toEqual(a.body)
+  })
+
+  it('parses headings, paragraphs, lists, tables, code, images and diagrams', async () => {
+    const { markdownToBlocks } = await import('../../src/lib/markdown.js')
+    const md = [
+      '# Wiring the **sensor**',
+      'First line',
+      'joins the paragraph.',
+      '',
+      '* one',
+      '* two',
+      '  continued',
+      '1. step',
+      '2) next',
+      '',
+      '| Pin | Goes to |',
+      '|:---|---:|',
+      '| VCC | 5V |',
+      '',
+      '```cpp',
+      'int x = 1;',
+      '',
+      '```',
+      '![Breadboard layout](https://media.example.com/a.webp)',
+      '![Wiring diagram]()',
+    ].join('\n')
+    expect(markdownToBlocks(md)).toEqual([
+      { type: 'h2', id: 'wiring-the-sensor', text: 'Wiring the **sensor**' },
+      { type: 'p', text: 'First line joins the paragraph.' },
+      { type: 'list', items: ['one', 'two continued'] },
+      { type: 'list', ordered: true, items: ['step', 'next'] },
+      { type: 'table', head: ['Pin', 'Goes to'], rows: [['VCC', '5V']] },
+      { type: 'code', text: 'int x = 1;\n' },
+      { type: 'image', text: 'Breadboard layout', src: 'https://media.example.com/a.webp' },
+      { type: 'diagram', text: 'Wiring diagram' },
+    ])
+  })
+
+  it('parses inline styles and drops unsafe links', async () => {
+    const { parseInline } = await import('../../src/lib/markdown.js')
+    expect(parseInline('Use **bold**, *it*, `pin 13` and [the shop](/shop) or [bad](javascript:alert(1))')).toEqual([
+      { type: 'text', text: 'Use ' },
+      { type: 'strong', text: 'bold' },
+      { type: 'text', text: ', ' },
+      { type: 'em', text: 'it' },
+      { type: 'text', text: ', ' },
+      { type: 'code', text: 'pin 13' },
+      { type: 'text', text: ' and ' },
+      { type: 'link', text: 'the shop', href: '/shop' },
+      { type: 'text', text: ' or ' },
+      { type: 'text', text: 'bad' },
+      { type: 'text', text: ')' },
+    ])
+    // snake_case names aren't italics
+    expect(parseInline('Set DHT_PIN and WIFI_SSID')).toEqual([{ type: 'text', text: 'Set DHT_PIN and WIFI_SSID' }])
+  })
+
+  it('the API accepts numbered lists and images, and rejects unsafe image sources', async () => {
+    const { app } = setup()
+    const admin = client(app)
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    const base = { title: 'Markdown test', category: 'tutorials', status: 'draft' }
+    const ok = await admin.put('/api/admin/articles/md-test', {
+      ...base,
+      body: [
+        { type: 'list', ordered: true, items: ['a', 'b'] },
+        { type: 'image', text: 'Cap', src: 'https://x.test/a.png' },
+      ],
+    })
+    expect(ok.status).toBe(200)
+    const bad = await admin.put('/api/admin/articles/md-test', { ...base, body: [{ type: 'image', text: 'x', src: 'javascript:alert(1)' }] })
+    expect(bad.status).toBe(400)
+  })
+})
+
+describe('coupon pricing', () => {
+  it('splits a discount across lines exactly, lowering each taxable value before GST', async () => {
+    const { allocate, priceLines } = await import('../src/lib/money.js')
+    expect(allocate(100, [1, 1, 1])).toEqual([34, 33, 33])
+    expect(allocate(0, [5, 5])).toEqual([0, 0])
+
+    const coupon = { kind: 'percent', value: 10, max_discount_paise: null }
+    const t = priceLines([{ unitPricePaise: 100000, qty: 1, gstRate: 18 }, { unitPricePaise: 30000, qty: 1, gstRate: 5 }], 'standard', coupon)
+    expect(t.discount).toBe(13000)
+    expect(t.lines.map((l) => l.discountPaise)).toEqual([10000, 3000])
+    expect(t.lines.map((l) => l.taxPaise)).toEqual([16200, 1350]) // 18% of 90,000 and 5% of 27,000
+    expect(t.total).toBe(130000 - 13000 + 0 + 17550) // free shipping: ₹1,170 ≥ ₹999 after discount
+  })
+
+  it('caps percent coupons, never discounts below zero, and free_shipping waives shipping', async () => {
+    const { priceLines } = await import('../src/lib/money.js')
+    expect(priceLines([{ unitPricePaise: 500000, qty: 1 }], 'standard', { kind: 'percent', value: 50, max_discount_paise: 20000 }).discount).toBe(20000)
+    expect(priceLines([{ unitPricePaise: 10000, qty: 1 }], 'standard', { kind: 'amount', value: 50000 }).discount).toBe(10000)
+    const ship = priceLines([{ unitPricePaise: 10000, qty: 1 }], 'express', { kind: 'free_shipping', value: 0 })
+    expect(ship).toMatchObject({ discount: 0, shipping: 0 })
+  })
+})
+
+describe('coupons', () => {
+  const { app, db } = setup()
+  const admin = client(app)
+  const shopper = client(app)
+  const cart = [{ productId: 'esp32-iot-starter', qty: 1 }]
+  const pay = async (api, res) =>
+    api.post('/api/checkout/verify', { orderId: res.body.orderId, razorpay_order_id: res.body.payment.orderId, razorpay_payment_id: `pay_${res.body.orderId}`, razorpay_signature: 'fake-ok' })
+
+  beforeAll(async () => {
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+  })
+
+  it('admins create and edit coupons, with validation', async () => {
+    expect((await shopper.post('/api/admin/coupons', { code: 'X', kind: 'percent', value: 10 })).status).toBe(401)
+    const bad = await admin.post('/api/admin/coupons', { code: 'BAD', kind: 'percent', value: 150 })
+    expect(bad.status).toBe(400)
+    expect(bad.body.error.details[0].path).toBe('value')
+
+    const res = await admin.post('/api/admin/coupons', { code: 'welcome10', kind: 'percent', value: 10, maxDiscount: 100, minSubtotal: 500, maxUses: 2, perCustomer: 1 })
+    expect(res.status).toBe(201)
+    expect(res.body.coupon).toMatchObject({ code: 'WELCOME10', value: 10, maxDiscount: 100, minSubtotal: 500, usedCount: 0, active: true })
+    expect((await admin.post('/api/admin/coupons', { code: 'WELCOME10', kind: 'amount', value: 50 })).status).toBe(409)
+    expect((await admin.post('/api/admin/coupons', { code: 'FLAT50', kind: 'amount', value: 50 })).status).toBe(201)
+  })
+
+  it('quotes a cart with a coupon, and explains why a code does not apply', async () => {
+    const q = await shopper.post('/api/checkout/quote', { items: cart, couponCode: ' welcome10 ' })
+    expect(q.status).toBe(200)
+    // 10% of ₹1,499 = ₹149.90, capped at ₹100; GST on ₹1,399
+    expect(q.body.totals).toMatchObject({ subtotal: 1499, discount: 100, shipping: 0, tax: 251.82, total: 1650.82, coupon: { code: 'WELCOME10', summary: '10% off (up to ₹100)' } })
+
+    const unknown = await shopper.post('/api/checkout/quote', { items: cart, couponCode: 'NOPE' })
+    expect(unknown.status).toBe(400)
+    expect(unknown.body.error.details[0]).toMatchObject({ path: 'couponCode', message: `"NOPE" isn't a valid coupon code.` })
+    const small = await shopper.post('/api/checkout/quote', { items: [{ productId: 'hc-sr04', qty: 1 }], couponCode: 'WELCOME10' })
+    expect(small.body.error.message).toContain('needs ₹500')
+  })
+
+  it('checks out with a coupon: discounted totals, per-line discounts, a reserved use, and the invoice shows it', async () => {
+    const res = await shopper.post('/api/checkout', { ...checkoutBody(cart), couponCode: 'WELCOME10' })
+    expect(res.status).toBe(201)
+    expect(res.body.totals).toMatchObject({ discount: 100, total: 1650.82 })
+    expect(res.body.payment.amount).toBe(165082)
+    const order = await db.first('SELECT coupon_code, discount_paise, total_paise FROM orders WHERE id = ?', [res.body.orderId])
+    expect(order).toMatchObject({ coupon_code: 'WELCOME10', discount_paise: 10000, total_paise: 165082 })
+    expect((await db.first('SELECT SUM(discount_paise) AS d FROM order_items WHERE order_id = ?', [res.body.orderId])).d).toBe(10000)
+    expect((await db.first(`SELECT used_count FROM coupons WHERE code = 'WELCOME10'`)).used_count).toBe(1)
+
+    expect((await pay(shopper, res)).status).toBe(200)
+    const invoice = await admin.get(`/api/admin/orders/${res.body.orderId}/invoice`)
+    expect(invoice.body).toContain('Discount (₹)')
+    expect(invoice.body).toContain('coupon <strong>WELCOME10</strong>')
+    expect((await admin.get(`/api/admin/orders/${res.body.orderId}`)).body.order.totals.discount).toBe(100)
+  })
+
+  it('limits uses per customer, and in total', async () => {
+    const again = await shopper.post('/api/checkout', { ...checkoutBody(cart), couponCode: 'WELCOME10' })
+    expect(again.status).toBe(400)
+    expect(again.body.error.message).toBe(`You've already used WELCOME10.`)
+
+    const other = { ...checkoutBody(cart), couponCode: 'WELCOME10' }
+    other.contact = { ...other.contact, email: 'second@example.com' }
+    expect((await client(app).post('/api/checkout', other)).status).toBe(201) // use 2 of 2
+    other.contact = { ...other.contact, email: 'third@example.com' }
+    const full = await client(app).post('/api/checkout', other)
+    expect(full.status).toBe(400)
+    expect(full.body.error.message).toBe('WELCOME10 has been fully used.')
+  })
+
+  it('gives the use back when an unpaid checkout expires', async () => {
+    const pending = await db.first(`SELECT id FROM orders WHERE coupon_code = 'WELCOME10' AND status = 'pending_payment'`)
+    await db.run('UPDATE orders SET created_at = ? WHERE id = ?', [Date.now() - (HOLD_MINUTES + 1) * 60_000, pending.id])
+    await runMaintenance(db)
+    expect((await db.first(`SELECT used_count FROM coupons WHERE code = 'WELCOME10'`)).used_count).toBe(1)
+  })
+
+  it('respects dates and the on/off switch; lists paid usage for admins', async () => {
+    const base = { kind: 'amount', value: 50, minSubtotal: 0 }
+    await admin.put('/api/admin/coupons/FLAT50', { ...base, endsAt: Date.now() - 1000 })
+    expect((await shopper.post('/api/checkout/quote', { items: cart, couponCode: 'FLAT50' })).body.error.message).toBe('FLAT50 has expired.')
+    await admin.put('/api/admin/coupons/FLAT50', { ...base, active: false })
+    expect((await shopper.post('/api/checkout/quote', { items: cart, couponCode: 'FLAT50' })).status).toBe(400)
+    // A use limit can go down to the uses so far, not below
+    expect((await admin.put('/api/admin/coupons/WELCOME10', { kind: 'percent', value: 10, maxUses: 1, perCustomer: 1 })).status).toBe(200)
+    await admin.put('/api/admin/coupons/WELCOME10', { kind: 'percent', value: 10 })
+    await db.run(`UPDATE coupons SET used_count = 2 WHERE code = 'WELCOME10'`)
+    expect((await admin.put('/api/admin/coupons/WELCOME10', { kind: 'percent', value: 10, maxUses: 1 })).status).toBe(400)
+
+    const list = await admin.get('/api/admin/coupons')
+    expect(list.body.coupons.find((c) => c.code === 'WELCOME10')).toMatchObject({ paidOrders: 1, discountGiven: 100 })
+  })
+})
+
+describe('reviews from verified buyers', () => {
+  const { app, db, svc } = setup()
+  const admin = client(app)
+  const buyer = client(app)
+  const stranger = client(app)
+  const PRODUCT = 'esp32-iot-starter'
+  const review = { rating: 5, title: 'Great first IoT kit', body: 'Had the Wi-Fi thermometer running in an evening. Clear guide.' }
+  let orderId
+
+  beforeAll(async () => {
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    await buyer.post('/api/auth/register', { email: 'buyer@example.com', password: 'buyer password', name: 'Priya Sharma' })
+    await stranger.post('/api/auth/register', { email: 'stranger@example.com', password: 'stranger pass' })
+    const co = await buyer.post('/api/checkout', checkoutBody([{ productId: PRODUCT, qty: 1 }]))
+    orderId = co.body.orderId
+    await buyer.post('/api/checkout/verify', { orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: 'pay_rev', razorpay_signature: 'fake-ok' })
+  })
+
+  it('only lets buyers review once the order is delivered', async () => {
+    expect((await client(app).put(`/api/me/reviews/${PRODUCT}`, review)).status).toBe(401)
+    expect((await stranger.put(`/api/me/reviews/${PRODUCT}`, review)).status).toBe(403)
+    expect((await buyer.put(`/api/me/reviews/${PRODUCT}`, review)).status).toBe(403) // paid, not delivered yet
+    expect((await buyer.get('/api/me/reviews')).body.reviewable).toEqual([])
+
+    await admin.post(`/api/admin/orders/${orderId}/status`, { status: 'delivered' })
+    expect((await db.first('SELECT status FROM orders WHERE id = ?', [orderId])).status).toBe('delivered')
+    expect(svc.email.sent.at(-1).text).toContain('/account?tab=reviews')
+    expect((await buyer.get('/api/me/reviews')).body.reviewable).toMatchObject([{ productId: PRODUCT }])
+  })
+
+  it('validates, then queues the review for approval (not public yet)', async () => {
+    const short = await buyer.put(`/api/me/reviews/${PRODUCT}`, { rating: 5, body: 'ok' })
+    expect(short.status).toBe(400)
+    expect(short.body.error.details[0].path).toBe('body')
+
+    const res = await buyer.put(`/api/me/reviews/${PRODUCT}`, review)
+    expect(res.status).toBe(201)
+    expect(res.body.review).toMatchObject({ productId: PRODUCT, rating: 5, status: 'pending' })
+    expect((await buyer.get('/api/me/reviews')).body).toMatchObject({ reviewable: [], reviews: [{ status: 'pending' }] })
+    expect((await client(app).get(`/api/products/${PRODUCT}/reviews`)).body.summary.count).toBe(0)
+    expect((await admin.get('/api/admin/stats')).body.inbox.reviews).toBe(1)
+  })
+
+  it('approval publishes it, updates the rating, and shows the reply', async () => {
+    const { id } = (await admin.get('/api/admin/reviews?status=pending')).body.reviews[0]
+    expect((await stranger.patch(`/api/admin/reviews/${id}`, { status: 'approved' })).status).toBe(403)
+    const res = await admin.patch(`/api/admin/reviews/${id}`, { status: 'approved', reply: 'Thanks, Priya!' })
+    expect(res.body.review).toMatchObject({ status: 'approved', customerEmail: 'buyer@example.com', reply: 'Thanks, Priya!' })
+
+    const pub = await client(app).get(`/api/products/${PRODUCT}/reviews`)
+    expect(pub.body.summary).toEqual({ average: 5, count: 1, distribution: { 5: 1, 4: 0, 3: 0, 2: 0, 1: 0 } })
+    expect(pub.body.reviews[0]).toMatchObject({ author: 'Priya S.', verified: true, title: 'Great first IoT kit', reply: 'Thanks, Priya!' })
+    expect(pub.body.reviews[0].customerEmail).toBeUndefined()
+    expect((await client(app).get(`/api/products/${PRODUCT}`)).body.product).toMatchObject({ rating: 5, reviews: 1 })
+  })
+
+  it('editing sends it back for approval and takes it off the rating meanwhile', async () => {
+    expect((await buyer.put(`/api/me/reviews/${PRODUCT}`, { ...review, rating: 3 })).status).toBe(200)
+    expect(await db.first('SELECT rating, reviews_count FROM products WHERE id = ?', [PRODUCT])).toEqual({ rating: 0, reviews_count: 0 })
+    expect((await db.first('SELECT COUNT(*) AS n FROM reviews')).n).toBe(1) // still one review per customer per product
+    const { id } = (await admin.get('/api/admin/reviews?status=pending')).body.reviews[0]
+    await admin.patch(`/api/admin/reviews/${id}`, { status: 'rejected' })
+    expect((await client(app).get(`/api/products/${PRODUCT}/reviews`)).body.summary.count).toBe(0)
+  })
+
+  it('a guest order counts once the account email is confirmed', async () => {
+    const guestCo = await client(app).post('/api/checkout', { ...checkoutBody([{ productId: 'blink-sense-kit', qty: 1 }]), contact: { name: 'Stranger', email: 'stranger@example.com', phone: '98765 43210' } })
+    await db.run(`UPDATE orders SET status = 'delivered', paid_at = ? WHERE id = ?`, [Date.now(), guestCo.body.orderId])
+    expect((await stranger.put('/api/me/reviews/blink-sense-kit', review)).status).toBe(403) // email not confirmed
+    await db.run(`UPDATE users SET email_verified = 1 WHERE email = 'stranger@example.com'`)
+    expect((await stranger.put('/api/me/reviews/blink-sense-kit', review)).status).toBe(201)
+    expect((await stranger.del('/api/me/reviews/blink-sense-kit')).status).toBe(200)
+  })
+
+  it('the name shown is first name + initial', async () => {
+    const { authorName } = await import('../src/services/reviews.js')
+    expect(authorName('Priya Sharma')).toBe('Priya S.')
+    expect(authorName(' arjun  k  nair ')).toBe('arjun N.')
+    expect(authorName('')).toBe('Verified buyer')
+  })
+})
+
+describe('courier: bookings and tracking', () => {
+  const { app, db, svc } = setup({ COURIER_PROVIDER: 'fake' })
+  const admin = client(app)
+  const hook = (body, token = 'fake-courier-token') =>
+    app.request('/api/webhooks/courier', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': token }, body: JSON.stringify(body) })
+  const paidOrder = async () => {
+    const buyer = client(app)
+    const co = await buyer.post('/api/checkout', checkoutBody([{ productId: 'esp32-iot-starter', qty: 2 }]))
+    await buyer.post('/api/checkout/verify', { orderId: co.body.orderId, razorpay_order_id: co.body.payment.orderId, razorpay_payment_id: `pay_${co.body.orderId}`, razorpay_signature: 'fake-ok' })
+    return co.body.orderId
+  }
+  const order = (id) => db.first('SELECT * FROM orders WHERE id = ?', [id])
+  let orderId, awb
+
+  beforeAll(async () => {
+    await admin.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    orderId = await paidOrder()
+  })
+
+  it('books a shipment once: AWB, courier, packed status and a customer email', async () => {
+    const res = await admin.post(`/api/admin/orders/${orderId}/ship`, {})
+    expect(res.status).toBe(200)
+    expect(res.body.order).toMatchObject({ status: 'packed', courier: 'Test Courier', trackingStatus: 'AWB ASSIGNED' })
+    awb = res.body.order.trackingNumber
+    expect(awb).toMatch(/^FAKE/)
+    expect(svc.email.sent.at(-1).subject).toBe(`Order ${orderId}: packed`)
+    expect((await admin.post(`/api/admin/orders/${orderId}/ship`, {})).status).toBe(409)
+    const detail = (await admin.get(`/api/admin/orders/${orderId}`)).body
+    expect(detail.courier).toBe('fake')
+    expect(detail.order.shipment.provider).toBe('fake')
+  })
+
+  it('webhook: authenticates, moves the order forward only, and emails each step', async () => {
+    expect((await hook({ awb, current_status: 'PICKED UP' }, 'wrong')).status).toBe(401)
+    expect(await (await hook({ awb: 'NOPE', current_status: 'DELIVERED' })).json()).toMatchObject({ ignored: 'unknown shipment' })
+
+    expect(await (await hook({ awb, current_status: 'PICKED UP' })).json()).toMatchObject({ changed: true, status: 'shipped' })
+    expect(svc.email.sent.at(-1).subject).toBe(`Order ${orderId}: shipped`)
+    const sent = svc.email.sent.length
+    expect(await (await hook({ awb, current_status: 'PICKED UP' })).json()).toMatchObject({ changed: false }) // repeat
+    expect(await (await hook({ awb, current_status: 'IN TRANSIT' })).json()).toMatchObject({ changed: false }) // already shipped
+    expect(svc.email.sent.length).toBe(sent)
+
+    await hook({ awb, current_status: 'UNDELIVERED' })
+    expect((await admin.get('/api/admin/stats')).body.inbox.shippingIssues).toBe(1)
+    await hook({ order_id: orderId, current_status: 'OUT FOR DELIVERY' }) // found by our order id too
+    expect((await order(orderId)).status).toBe('out_for_delivery')
+    await hook({ awb, current_status: 'DELIVERED' })
+    expect((await order(orderId)).status).toBe('delivered')
+    expect(svc.email.sent.at(-1).text).toContain('/account?tab=reviews')
+    await hook({ awb, current_status: 'IN TRANSIT' }) // late, out-of-order update
+    expect((await order(orderId)).status).toBe('delivered')
+
+    const events = (await db.all('SELECT status, note FROM order_events WHERE order_id = ? ORDER BY id', [orderId])).map((e) => e.status)
+    expect(events).toEqual(['pending_payment', 'placed', 'packed', 'shipped', 'courier', 'courier_issue', 'out_for_delivery', 'delivered'])
+    const tracked = await client(app).get(`/api/orders/track?orderId=${orderId}&contact=buyer@example.com`)
+    expect(tracked.body.order).toMatchObject({ status: 'delivered', trackingStatus: 'DELIVERED', courier: 'Test Courier' })
+  })
+
+  it('polling catches up when webhooks are missed', async () => {
+    const { runScheduled } = await import('../src/services/maintenance.js')
+    const { FAKE_STEP_MS } = await import('../src/services/courier.js')
+    const id = await paidOrder()
+    await admin.post(`/api/admin/orders/${id}/ship`, {})
+    const booked = Date.now()
+    await runScheduled(svc, booked + 2.5 * FAKE_STEP_MS) // courier: IN TRANSIT
+    expect((await order(id)).status).toBe('shipped')
+    await runScheduled(svc, booked + 10 * FAKE_STEP_MS) // courier: DELIVERED
+    expect((await order(id)).status).toBe('delivered')
+  })
+
+  it('refuses unpaid orders, and manual mode has no booking', async () => {
+    const co = await client(app).post('/api/checkout', checkoutBody())
+    expect((await admin.post(`/api/admin/orders/${co.body.orderId}/ship`, {})).status).toBe(400)
+
+    const manual = setup()
+    const a = client(manual.app)
+    await a.post('/api/auth/register', { email: 'admin@example.com', password: 'admin password' })
+    const res = await a.post(`/api/admin/orders/${orderId}/ship`, {})
+    expect(res.status).toBe(400)
+    expect(res.body.error.message).toMatch(/COURIER_PROVIDER=manual/)
+  })
+
+  it('maps courier statuses conservatively', async () => {
+    const { mapCourierStatus } = await import('../src/services/courier.js')
+    expect(mapCourierStatus('Delivered')).toBe('delivered')
+    expect(mapCourierStatus('RTO DELIVERED')).toBeNull()
+    expect(mapCourierStatus('UNDELIVERED')).toBeNull()
+    expect(mapCourierStatus('Reached at Destination Hub')).toBe('shipped')
+    expect(mapCourierStatus('PICKUP SCHEDULED')).toBeNull()
+  })
+})
+
+describe('courier: Shiprocket API', () => {
+  const TOKEN = 'x'.repeat(24)
+  const make = async (responder) => {
+    const { createCourier } = await import('../src/services/courier.js')
+    const { db } = setup()
+    const config = loadConfig({ APP_ENV: 'test', COURIER_PROVIDER: 'shiprocket', SHIPROCKET_EMAIL: 'api@circuitbay.in', SHIPROCKET_PASSWORD: 'pw', SHIPROCKET_WEBHOOK_TOKEN: TOKEN })
+    const calls = []
+    const fetchImpl = async (url, init) => {
+      const path = url.replace('https://apiv2.shiprocket.in/v1/external', '')
+      const body = init.body ? JSON.parse(init.body) : undefined
+      calls.push({ path, method: init.method, auth: init.headers.Authorization, body })
+      const [status, json] = responder(path, body, calls)
+      return new Response(JSON.stringify(json), { status })
+    }
+    return { courier: createCourier(config, { db, fetchImpl }), calls, db }
+  }
+  const order = {
+    id: 'CBSHIP0001', contact_name: 'Test Builder Kumar', contact_email: 'b@example.com', contact_phone: '+91 98765 43210',
+    ship_line1: '1 Test Street', ship_line2: null, ship_city: 'Kochi', ship_state: 'Kerala', ship_pin: '682001',
+    paid_at: Date.UTC(2026, 8, 30, 6, 30), created_at: 0, shipping_paise: 0, total_paise: 353764,
+  }
+  const items = [{ product_id: 'esp32-iot-starter', name: 'ESP32 IoT Starter Kit', qty: 2, unit_price_paise: 149900, discount_paise: 0, tax_paise: 53964, gst_rate: 18, hsn_code: '85437099' }]
+
+  it('logs in once, books the order, assigns the AWB, schedules pickup and gets the label', async () => {
+    const { courier, calls, db } = await make((path) => {
+      if (path === '/auth/login') return [200, { token: 'tok1' }]
+      if (path === '/orders/create/adhoc') return [200, { order_id: 111, shipment_id: 222, status: 'NEW' }]
+      if (path === '/courier/assign/awb') return [200, { awb_assign_status: 1, response: { data: { awb_code: '1234567890', courier_name: 'Delhivery Surface' } } }]
+      if (path === '/courier/generate/pickup') return [200, { pickup_status: 1 }]
+      if (path === '/courier/generate/label') return [200, { label_created: 1, label_url: 'https://labels.example/1.pdf' }]
+      return [404, {}]
+    })
+    const booked = await courier.book({ order, items, weightGrams: 1000, box: [20, 15, 8] })
+    expect(booked).toEqual({ courierOrderId: '111', shipmentId: '222', awb: '1234567890', courier: 'Delhivery Surface', labelUrl: 'https://labels.example/1.pdf', trackingUrl: 'https://shiprocket.co/tracking/1234567890' })
+    expect(calls.map((c) => c.path)).toEqual(['/auth/login', '/orders/create/adhoc', '/courier/assign/awb', '/courier/generate/pickup', '/courier/generate/label'])
+    expect(calls.filter((c) => c.path === '/auth/login')).toHaveLength(1) // token cached
+    expect(calls[1].auth).toBe('Bearer tok1')
+    expect(calls[1].body).toMatchObject({
+      order_id: 'CBSHIP0001', order_date: '2026-09-30 12:00', billing_customer_name: 'Test', billing_last_name: 'Builder Kumar',
+      billing_phone: '9876543210', payment_method: 'Prepaid', weight: 1, length: 20, sub_total: 3537.64,
+      order_items: [{ sku: 'esp32-iot-starter', units: 2, selling_price: '1768.82', tax: 18, hsn: '85437099' }],
+    })
+    expect((await db.first(`SELECT token FROM service_tokens WHERE name = 'shiprocket'`)).token).toBe('tok1')
+  })
+
+  it('logs in again when the token has expired, and explains a failed AWB', async () => {
+    let logins = 0
+    const { courier } = await make((path, _b, calls) => {
+      if (path === '/auth/login') return [200, { token: `tok${++logins}` }]
+      if (path === '/orders/create/adhoc') return calls.at(-1).auth === 'Bearer tok1' ? [401, { message: 'Token expired' }] : [200, { order_id: 1, shipment_id: 2 }]
+      if (path === '/courier/assign/awb') return [200, { awb_assign_status: 0, message: 'No courier serviceable for this PIN' }]
+      return [200, {}]
+    })
+    await expect(courier.book({ order, items, weightGrams: 500, box: [20, 15, 8] })).rejects.toThrow(/No courier serviceable/)
+    expect(logins).toBe(2)
+  })
+
+  it('reads tracking, and checks the webhook token', async () => {
+    const { courier } = await make((path) =>
+      path === '/auth/login' ? [200, { token: 't' }] : [200, { tracking_data: { shipment_track: [{ current_status: 'Out For Delivery', updated_time: '2026-09-30 10:00:00' }] } }],
+    )
+    expect((await courier.track('1234567890')).status).toBe('Out For Delivery')
+    const req = (key) => ({ req: { header: (h) => (h === 'x-api-key' ? key : undefined) } })
+    expect(courier.verifyWebhook(req(TOKEN))).toBe(true)
+    expect(courier.verifyWebhook(req('nope'))).toBe(false)
+    expect(courier.verifyWebhook(req(undefined))).toBe(false)
   })
 })

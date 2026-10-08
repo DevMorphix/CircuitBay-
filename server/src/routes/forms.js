@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { body } from '../middleware/validate.js'
 import { limitByIp } from '../middleware/rateLimit.js'
 import { randomId, randomToken } from '../lib/crypto.js'
+import { notFound } from '../lib/errors.js'
 import { json } from '../db/index.js'
 import * as s from '../lib/schemas.js'
 import { emails } from '../services/email.js'
@@ -85,24 +86,62 @@ forms.post(
   limit,
   body(z.object({ email: s.email, source: z.string().max(40).optional(), ...honeypot })),
   async (c) => {
+    const { db, email: mailer, config } = c.var.svc
     const { email, source } = c.req.valid('json')
-    await c.var.svc.db.run(
+    const prev = await db.first('SELECT status, unsubscribe_token FROM newsletter_subscribers WHERE email = ?', [email])
+    await db.run(
       `INSERT INTO newsletter_subscribers (email, source, unsubscribe_token, created_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(email) DO UPDATE SET status = 'subscribed'`,
       [email, source, randomToken(18), Date.now()],
     )
+    // Welcome email only for new (or returning) subscribers, not repeats
+    if (prev?.status !== 'subscribed') {
+      const { unsubscribe_token: token } = await db.first('SELECT unsubscribe_token FROM newsletter_subscribers WHERE email = ?', [email])
+      await mailer.syncAudience(email, true)
+      try {
+        await mailer.send({
+          to: email,
+          ...emails.newsletterWelcome(config.SITE_URL, `${config.SITE_URL}/unsubscribe?token=${encodeURIComponent(token)}`),
+          headers: {
+            'List-Unsubscribe': `<${config.API_PUBLIC_URL}/api/forms/newsletter/one-click?token=${encodeURIComponent(token)}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
+        })
+      } catch (err) {
+        console.error('newsletter welcome email failed', err)
+      }
+    }
     return c.json({ ok: true }, 201)
   },
 )
 
+async function unsubscribe(c, token) {
+  const { db, email: mailer } = c.var.svc
+  const row = await db.first('SELECT email FROM newsletter_subscribers WHERE unsubscribe_token = ?', [token])
+  if (!row) return false
+  await db.run(`UPDATE newsletter_subscribers SET status = 'unsubscribed' WHERE unsubscribe_token = ?`, [token])
+  await mailer.syncAudience(row.email, false)
+  return true
+}
+
+// From the /unsubscribe page (link in every newsletter email)
 forms.post(
   '/newsletter/unsubscribe',
+  limitByIp('unsubscribe', { limit: 30, windowSec: 3600 }),
   body(z.object({ token: z.string().min(10).max(100) })),
   async (c) => {
-    await c.var.svc.db.run(`UPDATE newsletter_subscribers SET status = 'unsubscribed' WHERE unsubscribe_token = ?`, [c.req.valid('json').token])
+    const found = await unsubscribe(c, c.req.valid('json').token)
+    if (!found) throw notFound('This unsubscribe link is invalid. You may already be unsubscribed.')
     return c.json({ ok: true })
   },
 )
+
+// One-click unsubscribe from the mail app (List-Unsubscribe-Post, RFC 8058)
+forms.post('/newsletter/one-click', limitByIp('unsubscribe', { limit: 30, windowSec: 3600 }), async (c) => {
+  const token = c.req.query('token') ?? ''
+  if (token.length >= 10 && token.length <= 100) await unsubscribe(c, token)
+  return c.body(null, 204)
+})
 
 forms.post(
   '/project-submissions',

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell.jsx'
 import { PageHero, Section } from '../../components/ui/Section.jsx'
@@ -6,11 +6,12 @@ import { Button } from '../../components/ui/Button.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { OrderSummary } from '../../components/shop/OrderSummary.jsx'
 import { formatPrice, paymentMethods } from '../../content/shopData.js'
+import { STATE_NAMES } from '../../content/indianStates.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { api, fieldErrors } from '../../lib/api.js'
 import { payWithRazorpay } from '../../lib/razorpay.js'
-import { trackEvent } from '../../lib/analytics.js'
+import { trackBeginCheckout, trackPurchase } from '../../lib/analytics.js'
 
 const STEPS = ['Contact & address', 'Shipping', 'Payment']
 // Keep in sync with server/src/lib/money.js (the server's totals are final)
@@ -23,7 +24,7 @@ const SHIPPING = [
 // Flow: POST /api/checkout (server prices the cart and reserves stock for
 // 30 min) → Razorpay payment window → POST /api/checkout/verify.
 export function Checkout() {
-  const { items, subtotal, clear } = useCart()
+  const { items, subtotal, coupon, setCoupon, clear } = useCart()
   const { user } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
@@ -43,6 +44,14 @@ export function Checkout() {
   const [pending, setPending] = useState(null) // server order awaiting payment (for retries)
   const [done, setDone] = useState(false)
 
+  // Once per visit to checkout (not on every re-render)
+  const checkoutTracked = useRef(false)
+  useEffect(() => {
+    if (checkoutTracked.current || items.length === 0) return
+    checkoutTracked.current = true
+    trackBeginCheckout(items, subtotal)
+  }, [items, subtotal])
+
   if (items.length === 0 && !done) return <Navigate to="/shop/cart" replace />
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
@@ -59,6 +68,7 @@ export function Checkout() {
       contact: { name: form.name, email: form.email, phone: form.phone },
       address: { line1: form.line1, line2: form.line2 || undefined, city: form.city, state: form.state, pin: form.pin },
       shippingMethod: shipping,
+      couponCode: coupon || undefined,
     })
     setPending(res)
     return res
@@ -77,7 +87,7 @@ export function Checkout() {
             { razorpay_order_id: order.payment.orderId, razorpay_payment_id: `pay_dev_${Date.now()}`, razorpay_signature: 'fake-ok' }
           : await payWithRazorpay(order.payment)
       const verified = await api.post('/checkout/verify', { orderId: order.orderId, ...result })
-      trackEvent('purchase', { transaction_id: order.orderId, value: order.totals.total, currency: 'INR' })
+      trackPurchase(order.orderId, order.totals, items)
       setDone(true)
       clear()
       navigate(`/shop/order/${order.orderId}`, { state: { order: verified.order } })
@@ -90,6 +100,11 @@ export function Checkout() {
       } else if (err?.status === 409) {
         setPending(null)
         setError({ message: err.message, items: err.details ?? [] })
+      } else if (err?.status === 400 && fieldErrors(err).couponCode) {
+        // The coupon stopped applying (used up, expired, already used by
+        // this email) — drop it; the summary shows the new total
+        setCoupon('')
+        setError({ message: `${err.message} We've removed it — check the new total, then pay.` })
       } else if (err?.status === 400 && !order) {
         setStep(0)
         setError({ message: err.message, fields: fieldErrors(err) })
@@ -155,7 +170,20 @@ export function Checkout() {
                 <In label="Apartment, landmark (optional)" id="line2" autoComplete="address-line2" required={false} className="sm:col-span-2" value={form.line2} onChange={set('line2')} />
                 <In label="City" id="city" autoComplete="address-level2" value={form.city} onChange={set('city')} error={fe['address.city']} />
                 <In label="PIN code" id="pin" inputMode="numeric" pattern="[0-9]{6}" autoComplete="postal-code" value={form.pin} onChange={set('pin')} error={fe['address.pin']} />
-                <In label="State" id="state" autoComplete="address-level1" className="sm:col-span-2" value={form.state} onChange={set('state')} error={fe['address.state']} />
+                <div className="sm:col-span-2">
+                  <label htmlFor="state" className="mb-1.5 block text-sm font-medium text-ink-900">
+                    State
+                  </label>
+                  <select id="state" required autoComplete="address-level1" className="field" value={form.state} onChange={set('state')} aria-invalid={Boolean(fe['address.state'])}>
+                    <option value="" disabled>
+                      Choose your state
+                    </option>
+                    {STATE_NAMES.map((n) => (
+                      <option key={n}>{n}</option>
+                    ))}
+                  </select>
+                  {fe['address.state'] && <p className="mt-1 text-xs font-medium text-navy-800">{fe['address.state']}</p>}
+                </div>
                 <div className="sm:col-span-2">
                   <Button type="submit">Continue to shipping</Button>
                 </div>
@@ -196,7 +224,7 @@ export function Checkout() {
           </div>
 
           <div className="lg:sticky lg:top-40 lg:self-start">
-            <OrderSummary items={items} subtotal={subtotal} shippingMethod={shipping} serverTotals={serverTotals} showItems showCoupon={false} />
+            <OrderSummary items={items} subtotal={subtotal} shippingMethod={shipping} serverTotals={serverTotals} email={form.email} showItems showCoupon={!pending} />
           </div>
         </div>
       </Section>

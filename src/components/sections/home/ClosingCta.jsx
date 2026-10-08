@@ -8,8 +8,10 @@ import { CircuitTrace } from '../../ui/CircuitTrace.jsx'
 export function ClosingCta({ headline = closingCta.headline, snap = true }) {
   return (
     <Section tone="dark" id="start" snap={snap} className="relative overflow-hidden">
-      <CircuitTrace state="reconnecting" className="pointer-events-none absolute inset-x-0 top-10 h-12 w-full opacity-60" />
-      <Reveal className="relative mx-auto max-w-3xl py-10 text-center">
+      <Reveal from="scale" className="pointer-events-none absolute inset-x-0 top-10">
+        <CircuitTrace state="reconnecting" className="h-12 w-full opacity-60" />
+      </Reveal>
+      <Reveal from="scale" delay={0.06} className="relative mx-auto max-w-3xl py-10 text-center">
         <h2 className="font-heading text-4xl font-semibold tracking-tight text-white sm:text-6xl">{headline}</h2>
         <div className="mt-10 flex flex-wrap justify-center gap-4">
           <Button

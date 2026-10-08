@@ -1,4 +1,51 @@
 import { emails } from './email.js'
+import { financialYear } from '../lib/money.js'
+
+// Issues the next sequential GST invoice number for a paid order, e.g.
+// 'CB/26-27/000042' (15 chars; GST allows up to 16). Both statements
+// re-check the order inside the transaction, so a number is only consumed
+// when it's actually assigned — no gaps, no duplicates, even if the
+// webhook and the browser confirm the same payment at once.
+export function invoiceStatements(orderId, now = Date.now()) {
+  const fy = financialYear(now)
+  const eligible = "EXISTS (SELECT 1 FROM orders WHERE id = ? AND invoice_no IS NULL AND paid_at IS NOT NULL AND status != 'cancelled')"
+  return [
+    {
+      sql: `INSERT INTO invoice_counters (fy, last) SELECT ?, 1 WHERE ${eligible}
+            ON CONFLICT(fy) DO UPDATE SET last = last + 1`,
+      params: [fy, orderId],
+    },
+    {
+      sql: `UPDATE orders SET invoice_no = (SELECT 'CB/' || fy || '/' || printf('%06d', last) FROM invoice_counters WHERE fy = ?), invoiced_at = ?
+            WHERE id = ? AND invoice_no IS NULL AND paid_at IS NOT NULL AND status != 'cancelled'`,
+      params: [fy, now, orderId],
+    },
+  ]
+}
+
+// Issues a full-value GST credit note for a cancelled order that already has
+// a tax invoice, e.g. 'CN/26-27/000001'. Guarded like invoiceStatements:
+// the number is only consumed if the note is actually created, and an order
+// can only ever get one. Run in the same batch as the cancellation.
+export function creditNoteStatements(orderId, reason, now = Date.now()) {
+  const fy = financialYear(now)
+  const eligible = `EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'cancelled' AND invoice_no IS NOT NULL)
+                    AND NOT EXISTS (SELECT 1 FROM credit_notes WHERE order_id = ?)`
+  return [
+    {
+      sql: `INSERT INTO credit_note_counters (fy, last) SELECT ?, 1 WHERE ${eligible}
+            ON CONFLICT(fy) DO UPDATE SET last = last + 1`,
+      params: [fy, orderId, orderId],
+    },
+    {
+      sql: `INSERT INTO credit_notes (number, order_id, invoice_no, reason, subtotal_paise, discount_paise, shipping_paise, tax_paise, total_paise, issued_at)
+            SELECT (SELECT 'CN/' || fy || '/' || printf('%06d', last) FROM credit_note_counters WHERE fy = ?),
+                   id, invoice_no, ?, subtotal_paise, discount_paise, shipping_paise, tax_paise, total_paise, ?
+            FROM orders WHERE id = ? AND ${eligible}`,
+      params: [fy, reason, now, orderId, orderId, orderId],
+    },
+  ]
+}
 
 // Stock model: checkout RESERVES stock (decrements immediately, atomically
 // — the `stock >= 0` CHECK constraint makes an oversell abort the whole
@@ -23,7 +70,10 @@ export async function markOrderPaid(svc, orderId, paymentId) {
     [paymentId, now, now, orderId],
   )
   if (res.changes === 1) {
-    await db.run(`INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'placed', 'Payment received', ?)`, [orderId, now])
+    await db.batch([
+      { sql: `INSERT INTO order_events (order_id, status, note, created_at) VALUES (?, 'placed', 'Payment received', ?)`, params: [orderId, now] },
+      ...invoiceStatements(orderId, now),
+    ])
     await sendConfirmation(svc, orderId)
     return true
   }
@@ -53,10 +103,18 @@ async function placeLatePayment(svc, orderId, paymentId) {
               SELECT ?, 'placed', 'Payment received after the hold expired', ? WHERE ${stillCancelled}`,
         params: [orderId, now, orderId],
       },
+      // Take the coupon use back too — unless it's used up since, in which
+      // case the customer (who has paid) still keeps their discount
+      {
+        sql: `UPDATE coupons SET used_count = used_count + 1, updated_at = ?
+               WHERE code = (SELECT coupon_code FROM orders WHERE id = ?) AND (max_uses IS NULL OR used_count < max_uses) AND ${stillCancelled}`,
+        params: [now, orderId, orderId],
+      },
       {
         sql: `UPDATE orders SET status = 'placed', payment_id = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status = 'cancelled' AND paid_at IS NULL`,
         params: [paymentId, now, now, orderId],
       },
+      ...invoiceStatements(orderId, now),
     ])
   } catch (err) {
     if (!isStockConflict(err)) throw err
@@ -100,8 +158,9 @@ export async function markOrderPaymentFailed(svc, orderId, reason) {
   }
 }
 
-// Statements that cancel an order and return its reserved stock — but only
-// if it's still in one of `fromStatuses` (checked inside the transaction).
+// Statements that cancel an order and return its reserved stock and coupon
+// use — but only if it's still in one of `fromStatuses` (checked inside the
+// transaction).
 export function cancelAndRestockStatements(orderId, fromStatuses, note, now = Date.now()) {
   const list = fromStatuses.map((s) => `'${s}'`).join(', ')
   const guard = `EXISTS (SELECT 1 FROM orders WHERE id = ? AND status IN (${list}))`
@@ -114,6 +173,11 @@ export function cancelAndRestockStatements(orderId, fromStatuses, note, now = Da
       sql: `UPDATE products SET stock = stock + (SELECT qty FROM order_items oi WHERE oi.order_id = ? AND oi.product_id = products.id), updated_at = ?
              WHERE id IN (SELECT product_id FROM order_items WHERE order_id = ?) AND ${guard}`,
       params: [orderId, now, orderId, orderId],
+    },
+    {
+      sql: `UPDATE coupons SET used_count = MAX(used_count - 1, 0), updated_at = ?
+             WHERE code = (SELECT coupon_code FROM orders WHERE id = ?) AND ${guard}`,
+      params: [now, orderId, orderId],
     },
     {
       sql: `UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN (${list})`,

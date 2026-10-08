@@ -7,7 +7,7 @@ import { createSqliteDb, migrateSqlite } from './db/sqlite.js'
 import { createD1HttpDb } from './db/d1-http.js'
 import { createR2S3Storage } from './storage/r2-s3.js'
 import { createLocalDiskStorage } from './storage/local-disk.js'
-import { runMaintenance } from './services/maintenance.js'
+import { runScheduled } from './services/maintenance.js'
 import { createMemoryCache } from './lib/cache.js'
 
 // Plain Node.js entry. Choose adapters with env vars:
@@ -52,10 +52,14 @@ const app = createApp(() => services)
 
 const port = Number(env.PORT ?? 8787)
 serve({ fetch: app.fetch, port }, () => {
-  console.log(`CircuitBay API on http://localhost:${port}  (db=${db.kind}, storage=${storage.kind}, payments=${services.payments.name}, env=${config.APP_ENV})`)
+  console.log(`CircuitBay API on http://localhost:${port}  (db=${db.kind}, storage=${storage.kind}, payments=${services.payments.name}, courier=${services.courier?.name ?? 'manual'}, env=${config.APP_ENV})`)
 })
 
 // Housekeeping every 10 minutes (the Worker uses a cron trigger instead)
-const maintain = () => runMaintenance(db).catch((err) => console.error('maintenance failed', err))
+const maintain = () =>
+  runScheduled(services).catch((err) => {
+    console.error('maintenance failed', err)
+    return services.reportError(err, { tags: { job: 'maintenance' } })
+  })
 maintain()
 setInterval(maintain, 10 * 60 * 1000).unref()

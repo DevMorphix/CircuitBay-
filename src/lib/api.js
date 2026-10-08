@@ -14,14 +14,16 @@ export class ApiError extends Error {
 }
 
 async function request(method, path, body) {
+  const isForm = body instanceof FormData
   let res
   try {
     res = await fetch(`${BASE}/api${path}`, {
       method,
       credentials: 'include',
-      // The API only accepts JSON writes (CSRF protection)
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      // The API only accepts JSON writes (CSRF protection); file uploads send
+      // multipart and the browser sets that header itself
+      headers: body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : undefined,
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, 'network', "Can't reach CircuitBay right now. Check your connection and try again.")
@@ -40,6 +42,38 @@ export const api = {
   put: (path, body = {}) => request('PUT', path, body),
   patch: (path, body = {}) => request('PATCH', path, body),
   del: (path) => request('DELETE', path),
+  // Admin file upload → { key, url, contentType, size }
+  upload: (file, folder) => {
+    const form = new FormData()
+    form.set('file', file)
+    if (folder) form.set('folder', folder)
+    return request('POST', '/admin/uploads', form)
+  },
+}
+
+// Opens an invoice (HTML from the API) in a new tab. The tab is opened
+// first — synchronously, inside the click — so popup blockers allow it,
+// then filled once the invoice arrives.
+export async function openInvoice(method, path, body) {
+  const tab = window.open('', '_blank')
+  try {
+    const res = await fetch(`${BASE}/api${path}`, {
+      method,
+      credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    if (!res.ok) {
+      const e = (await res.json().catch(() => null))?.error
+      throw new ApiError(res.status, e?.code ?? 'error', e?.message ?? "Couldn't load the invoice.")
+    }
+    const url = URL.createObjectURL(new Blob([await res.text()], { type: 'text/html' }))
+    if (tab) tab.location.href = url
+    else window.location.href = url
+  } catch (err) {
+    tab?.close()
+    throw err
+  }
 }
 
 // Field-level messages from a 400 response: { email: '…', 'address.pin': '…' }

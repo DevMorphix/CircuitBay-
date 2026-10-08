@@ -5,6 +5,7 @@ import { getProduct } from '../content/shopData.js'
 // survives reloads; every storage call is guarded because it can throw in
 // private mode / with blocked site data.
 const STORAGE_KEY = 'cb_cart'
+const COUPON_KEY = 'cb_coupon'
 const CartContext = createContext(null)
 
 function readStored() {
@@ -17,8 +18,19 @@ function readStored() {
   }
 }
 
+function readCoupon() {
+  try {
+    return window.localStorage.getItem(COUPON_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export function CartProvider({ children }) {
   const [lines, setLines] = useState(readStored)
+  // Applied coupon code ('' = none). The server checks it on every quote
+  // and at checkout; this only remembers what the shopper typed.
+  const [coupon, setCoupon] = useState(readCoupon)
 
   useEffect(() => {
     try {
@@ -27,6 +39,15 @@ export function CartProvider({ children }) {
       // storage unavailable — cart just won't persist
     }
   }, [lines])
+
+  useEffect(() => {
+    try {
+      if (coupon) window.localStorage.setItem(COUPON_KEY, coupon)
+      else window.localStorage.removeItem(COUPON_KEY)
+    } catch {
+      // storage unavailable
+    }
+  }, [coupon])
 
   const value = useMemo(() => {
     const add = (id, qty = 1) =>
@@ -41,14 +62,17 @@ export function CartProvider({ children }) {
         qty <= 0 ? prev.filter((l) => l.id !== id) : prev.map((l) => (l.id === id ? { ...l, qty } : l)),
       )
     const remove = (id) => setLines((prev) => prev.filter((l) => l.id !== id))
-    const clear = () => setLines([])
+    const clear = () => {
+      setLines([])
+      setCoupon('')
+    }
 
     const items = lines.map((l) => ({ ...l, product: getProduct(l.id) }))
     const count = lines.reduce((n, l) => n + l.qty, 0)
     const subtotal = items.reduce((n, l) => n + l.qty * l.product.price, 0)
 
-    return { items, count, subtotal, add, setQty, remove, clear }
-  }, [lines])
+    return { items, count, subtotal, coupon, setCoupon, add, setQty, remove, clear }
+  }, [lines, coupon])
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }
@@ -60,14 +84,20 @@ export function useCart() {
   return ctx
 }
 
-// Estimated totals for the cart and checkout summary. Mirrors
-// server/src/lib/money.js (computed in paise so rounding matches); the
-// server's totals are final and replace this once checkout starts.
+// Estimated totals for the cart and checkout summary. Mirrors priceLines()
+// in server/src/lib/money.js: in paise, GST per line at each product's rate,
+// so rounding matches. The server's totals are final and replace this once
+// checkout starts.
 // eslint-disable-next-line react/only-export-components
-export function summarise(subtotal, shippingMethod = 'standard') {
-  const sub = Math.round(subtotal * 100)
+export function summarise(items, shippingMethod = 'standard') {
+  let sub = 0
+  let tax = 0
+  for (const l of items) {
+    const taxable = Math.round(l.product.price * 100) * l.qty
+    sub += taxable
+    tax += Math.round((taxable * (l.product.gstRate ?? 18)) / 100)
+  }
   let ship = shippingMethod === 'express' ? 149_00 : 79_00
   if ((shippingMethod === 'standard' && sub >= 999_00) || sub === 0) ship = 0
-  const tax = Math.round(sub * 0.18)
-  return { subtotal, shipping: ship / 100, tax: tax / 100, total: (sub + ship + tax) / 100 }
+  return { subtotal: sub / 100, shipping: ship / 100, tax: tax / 100, total: (sub + ship + tax) / 100 }
 }

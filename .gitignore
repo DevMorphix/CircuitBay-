@@ -34,3 +34,9 @@ dist-ssr
 
 # Local environment settings (secrets never committed)
 .env
+
+# Browser test output
+test-results/
+playwright-report/
+blob-report/
+dist-e2e/

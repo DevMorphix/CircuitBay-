@@ -59,7 +59,12 @@ export function ArrowText({ children, dark = false, className = '' }) {
   )
 }
 
-export function Photo({ label = 'Photo', className = '' }) {
+// Real image when `src` is set (uploaded in /admin), otherwise the
+// blueprint placeholder. `label` is the alt text either way.
+export function Photo({ src, label = 'Photo', className = '', eager = false }) {
+  if (src) {
+    return <img src={src} alt={label} loading={eager ? 'eager' : 'lazy'} decoding="async" className={`bg-surface-soft object-cover ${className}`} />
+  }
   // TODO_CLIENT: real workshop / student photography, not stock.
   return (
     <div role="img" aria-label={label} className={`photo-placeholder ${className}`}>

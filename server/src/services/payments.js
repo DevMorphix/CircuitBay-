@@ -6,8 +6,11 @@ import { hmacSha256Hex, randomId, timingSafeEqual } from '../lib/crypto.js'
 //   createOrder({ amountPaise, receipt, notes }) -> { id, amount, currency }
 //   verifyPayment({ orderId, paymentId, signature }) -> boolean
 //   verifyWebhook(rawBody, signatureHeader)      -> boolean
+//   refund({ paymentId, amountPaise, notes })    -> { id, status }
 export function createPaymentProvider(config) {
-  return config.PAYMENTS_PROVIDER === 'razorpay' ? razorpay(config) : fake()
+  if (config.PAYMENTS_PROVIDER === 'razorpay') return razorpay(config)
+  if (config.PAYMENTS_PROVIDER === 'disabled') return disabled()
+  return fake()
 }
 
 // Razorpay Standard Checkout:
@@ -42,6 +45,18 @@ function razorpay(config) {
       const expected = await hmacSha256Hex(config.RAZORPAY_WEBHOOK_SECRET, rawBody)
       return timingSafeEqual(expected, signature)
     },
+    // Full refund of a captured payment (Refunds API). Normal speed: the
+    // money reaches the customer in 5–7 working days.
+    async refund({ paymentId, amountPaise, notes }) {
+      const res = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}/refund`, {
+        method: 'POST',
+        headers: { Authorization: auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amountPaise, speed: 'normal', notes }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error?.description ?? `Razorpay refund failed (HTTP ${res.status})`)
+      return { id: body.id, status: body.status }
+    },
   }
 }
 
@@ -61,5 +76,28 @@ function fake() {
     async verifyWebhook(_raw, signature) {
       return signature === 'fake-ok'
     },
+    async refund() {
+      return { id: randomId(14, 'rfnd_fake_'), status: 'processed' }
+    },
+  }
+}
+
+// Before a gateway is set up: checkout is refused up front (see
+// POST /checkout), so no orders are created and nothing can be paid.
+function disabled() {
+  const off = () => {
+    throw new Error('Payments are disabled (PAYMENTS_PROVIDER=disabled)')
+  }
+  return {
+    name: 'disabled',
+    publicKey: null,
+    createOrder: off,
+    async verifyPayment() {
+      return false
+    },
+    async verifyWebhook() {
+      return false
+    },
+    refund: off,
   }
 }

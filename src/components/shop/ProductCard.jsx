@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { formatPrice } from '../../content/shopData.js'
 import { useCart } from '../../context/CartContext.jsx'
-import { trackEvent } from '../../lib/analytics.js'
+import { trackAddToCart } from '../../lib/analytics.js'
 import { Photo } from '../ui/Card.jsx'
 import { Icon } from '../ui/Icon.jsx'
 
@@ -24,14 +24,14 @@ export function Badges({ badges }) {
   )
 }
 
-// Renders only when the product has real reviews (none until the reviews
-// system exists) — we never show placeholder ratings to customers.
+// Renders only when the product has approved reviews from verified buyers —
+// we never show placeholder ratings to customers.
 export function Rating({ value, count }) {
   if (!count || !value) return null
   return (
     <span className="inline-flex items-center gap-1 text-xs text-ink-600">
       <Icon name="star" size={14} className="fill-brand-500 text-brand-500" />
-      <span className="font-semibold text-ink-900">{value}</span>
+      <span className="font-semibold text-ink-900">{Number(value).toFixed(1)}</span>
       {count != null && <span className="text-ink-400">({count})</span>}
     </span>
   )
@@ -44,7 +44,7 @@ export function AddToCartButton({ product, className = '', label = 'Add to cart'
       type="button"
       onClick={() => {
         add(product.id)
-        trackEvent('add_to_cart', { item_id: product.id, price: product.price })
+        trackAddToCart(product)
       }}
       className={`inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-brand-700 hover:shadow-[0_0_20px_rgba(63,125,222,0.4)] ${className}`}
     >
@@ -60,7 +60,7 @@ export function ProductCard({ product }) {
     <article className="card card-hover group flex h-full flex-col overflow-hidden">
       <Link to={`/shop/product/${product.id}`} className="flex flex-1 flex-col">
         <div className="relative">
-          <Photo label={product.name} className="aspect-square" />
+          <Photo src={product.images?.[0]} label={product.name} className="aspect-square w-full" />
           <div className="absolute left-3 top-3">
             <Badges badges={product.badges} />
           </div>

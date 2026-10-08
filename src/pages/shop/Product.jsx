@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PageShell } from '../../components/layout/PageShell.jsx'
 import { Section } from '../../components/ui/Section.jsx'
@@ -6,12 +6,13 @@ import { Photo } from '../../components/ui/Card.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { ProductCard, Badges, Rating } from '../../components/shop/ProductCard.jsx'
 import { ProjectCard } from '../../components/content/ProjectCard.jsx'
+import { ProductReviews } from '../../components/shop/Reviews.jsx'
 import { QtyStepper } from '../../components/shop/QtyStepper.jsx'
 import { formatPrice, getProduct, products, shopCategories } from '../../content/shopData.js'
 import { projects } from '../../content/siteContent.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { trackEvent } from '../../lib/analytics.js'
+import { trackAddToCart, trackViewItem } from '../../lib/analytics.js'
 import { api } from '../../lib/api.js'
 import { useApi } from '../../lib/useApi.js'
 import { NotFound } from '../NotFound.jsx'
@@ -37,6 +38,9 @@ function ProductView({ product }) {
   const { add } = useCart()
   const navigate = useNavigate()
   const category = shopCategories.find((c) => c.slug === product.category)
+  const images = product.images ?? []
+
+  useEffect(() => trackViewItem(product), [product])
 
   // Live stock from the API's uncached /stock endpoint once hydrated (the
   // prerendered page shows the catalog value; checkout re-checks on the
@@ -65,7 +69,7 @@ function ProductView({ product }) {
 
   const addToCart = () => {
     add(product.id, qty)
-    trackEvent('add_to_cart', { item_id: product.id, quantity: qty })
+    trackAddToCart(product, qty)
     setAdded(true)
   }
 
@@ -77,6 +81,7 @@ function ProductView({ product }) {
         description: `${product.forWhat} ${formatPrice(product.price)} with tracked delivery across India and student-friendly support.`.slice(0, 160),
         path: `/shop/product/${product.id}`,
         type: 'product',
+        image: product.images?.[0],
         jsonLd: [
           schema.product(product),
           schema.breadcrumbs([
@@ -99,21 +104,23 @@ function ProductView({ product }) {
 
           <div className="grid gap-10 lg:grid-cols-2 lg:gap-14">
             <div>
-              <Photo label={`${product.name} — view ${image + 1}`} className="aspect-square rounded-2xl" />
-              <div className="mt-3 grid grid-cols-4 gap-3">
-                {[0, 1, 2, 3].map((i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setImage(i)}
-                    aria-label={`Show image ${i + 1}`}
-                    aria-pressed={image === i}
-                    className={`overflow-hidden rounded-xl border-2 ${image === i ? 'border-brand-500' : 'border-transparent'}`}
-                  >
-                    <Photo label={String(i + 1)} className="aspect-square" />
-                  </button>
-                ))}
-              </div>
+              <Photo src={images[image]} eager label={`${product.name} — photo ${image + 1}`} className="aspect-square w-full rounded-2xl" />
+              {images.length > 1 && (
+                <div className="mt-3 grid grid-cols-4 gap-3">
+                  {images.map((src, i) => (
+                    <button
+                      key={src}
+                      type="button"
+                      onClick={() => setImage(i)}
+                      aria-label={`Show photo ${i + 1}`}
+                      aria-pressed={image === i}
+                      className={`overflow-hidden rounded-xl border-2 ${image === i ? 'border-brand-600' : 'border-transparent'}`}
+                    >
+                      <Photo src={src} label="" className="aspect-square w-full" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -124,7 +131,8 @@ function ProductView({ product }) {
                 <span className="chip">{product.level}</span>
               </div>
               <p className="mt-6 font-heading text-3xl font-semibold text-ink-900">{formatPrice(product.price)}</p>
-              <p className="mt-1 text-xs text-ink-400">Inclusive of all taxes</p>
+              {/* Matches checkout: GST is added on top (see server/src/lib/money.js) */}
+              <p className="mt-1 text-xs text-ink-400">+ {product.gstRate ?? 18}% GST, added at checkout</p>
               <p className={`mt-3 text-sm font-semibold ${stock < 10 ? 'text-navy-800' : 'text-brand-700'}`}>
                 {stock === 0 ? 'Out of stock' : stock < 10 ? `Only ${stock} left` : 'In stock — ships in 24 hours'}
               </p>
@@ -261,16 +269,7 @@ function TabBody({ tab, product }) {
         </p>
       )
     case 'Reviews':
-      return (
-        <div>
-          <Rating value={product.rating} count={product.reviews} />
-          {/* TODO: reviews system (verified buyers only) */}
-          <p className={product.reviews ? 'mt-3' : ''}>
-            No reviews yet. Bought this?{' '}
-            <Link to="/projects#submit" className="font-semibold text-brand-700">Share what you built with it →</Link>
-          </p>
-        </div>
-      )
+      return <ProductReviews productId={product.id} />
     case 'Q&A':
       return (
         <p>

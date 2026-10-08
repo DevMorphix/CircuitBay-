@@ -5,9 +5,11 @@ import { Button } from '../components/ui/Button.jsx'
 import { Photo } from '../components/ui/Card.jsx'
 import { Icon } from '../components/ui/Icon.jsx'
 import { ArticleCard } from '../components/content/ArticleCard.jsx'
+import { ArticleBody } from '../components/content/ArticleBody.jsx'
 import { ProjectCard } from '../components/content/ProjectCard.jsx'
 import { publishedArticles as articles, categoryLabel, formatDate } from '../content/blogData.js'
 import { schema } from '../lib/seo.js'
+import { stripInline } from '../lib/markdown.js'
 import { projects } from '../content/siteContent.js'
 import { formatPrice, getProduct } from '../content/shopData.js'
 import { NotFound } from './NotFound.jsx'
@@ -35,6 +37,7 @@ export function Article() {
         description: article.excerpt,
         path,
         type: 'article',
+        image: article.cover,
         jsonLd: [
           schema.article(article, path),
           schema.breadcrumbs([{ name: 'Home', path: '/' }, { name: 'Blog', path: '/blog' }, { name: article.title, path }]),
@@ -66,13 +69,11 @@ export function Article() {
 
       <div className="section-light px-4 pb-20 sm:px-6">
         <div className="mx-auto max-w-6xl">
-          <Photo label={`${article.title} — cover image`} className="mx-auto aspect-[16/8] max-w-[960px] rounded-b-2xl" />
+          <Photo src={article.cover} eager label={`${article.title} — cover image`} className="mx-auto block aspect-[16/8] w-full max-w-[960px] rounded-b-2xl" />
 
           <div className="mx-auto mt-12 grid max-w-[1040px] gap-12 lg:grid-cols-[1fr_240px]">
             <article className="mx-auto w-full min-w-0 max-w-[720px]">
-              {article.body.map((block, i) => (
-                <Block key={i} block={block} />
-              ))}
+              <ArticleBody blocks={article.body} />
 
               {parts.length > 0 && (
                 <aside className="card mt-12 p-6" aria-labelledby="parts-used">
@@ -111,7 +112,7 @@ export function Article() {
                   {toc.map((h) => (
                     <li key={h.id}>
                       <a href={`#${h.id}`} className="-ml-px block border-l-2 border-transparent pl-4 text-sm text-ink-600 hover:border-brand-500 hover:text-brand-600">
-                        {h.text}
+                        {stripInline(h.text)}
                       </a>
                     </li>
                   ))}
@@ -148,67 +149,4 @@ export function Article() {
       </Section>
     </PageShell>
   )
-}
-
-function Block({ block }) {
-  switch (block.type) {
-    case 'h2':
-      return (
-        <h2 id={block.id} className="mt-12 scroll-mt-28 font-heading text-2xl font-semibold text-ink-900 first:mt-0">
-          {block.text}
-        </h2>
-      )
-    case 'code':
-      return (
-        <pre className="mt-5 overflow-x-auto rounded-xl bg-navy-950 p-5 text-sm leading-relaxed text-brand-100">
-          <code>{block.text}</code>
-        </pre>
-      )
-    case 'list':
-      return (
-        <ul className="mt-5 list-disc space-y-2 pl-6 text-base leading-[1.7] text-ink-600 marker:text-brand-500">
-          {block.items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      )
-    case 'table':
-      return (
-        <div className="mt-6 overflow-x-auto rounded-xl border border-black/10">
-          <table className="w-full min-w-[520px] border-collapse text-left text-sm">
-            <thead className="bg-surface-soft">
-              <tr>
-                {block.head.map((h, i) => (
-                  <th key={i} scope="col" className="px-4 py-3 font-semibold text-ink-900">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-black/5">
-              {block.rows.map((row) => (
-                <tr key={row[0]}>
-                  {row.map((cell, i) =>
-                    i === 0 ? (
-                      <th key={i} scope="row" className="px-4 py-3 font-semibold text-ink-900">
-                        {cell}
-                      </th>
-                    ) : (
-                      <td key={i} className="px-4 py-3 text-ink-600">
-                        {cell}
-                      </td>
-                    ),
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )
-    case 'diagram':
-      // TODO_CLIENT: real wiring diagram
-      return <Photo label={block.text} className="mt-6 aspect-[16/9] rounded-xl" />
-    default:
-      return <p className="mt-5 text-base leading-[1.8] text-ink-600">{block.text}</p>
-  }
 }

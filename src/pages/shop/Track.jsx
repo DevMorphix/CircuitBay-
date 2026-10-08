@@ -7,6 +7,7 @@ import { ArrowLink } from '../../components/ui/Card.jsx'
 import { Icon } from '../../components/ui/Icon.jsx'
 import { api } from '../../lib/api.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { InvoiceButton } from '../../components/shop/InvoiceButton.jsx'
 
 const LABELS = {
   placed: 'Placed',
@@ -75,9 +76,30 @@ export function Track() {
           <div className="card p-6 sm:p-8">
             <p className="text-sm text-ink-400">Order</p>
             <p className="font-heading text-2xl font-semibold text-ink-900">#{order.id}</p>
+            {(order.invoiceNo || order.creditNoteNo) && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {order.invoiceNo && <InvoiceButton path="/orders/invoice" body={{ orderId: order.id, contact }} label={`GST invoice ${order.invoiceNo}`} />}
+                {order.creditNoteNo && <InvoiceButton path="/orders/credit-note" body={{ orderId: order.id, contact }} label={`Credit note ${order.creditNoteNo}`} />}
+              </div>
+            )}
             {order.trackingNumber && (
               <p className="mt-2 text-sm text-ink-600">
                 {order.courier ?? 'Courier'} tracking number: <span className="font-semibold text-ink-900">{order.trackingNumber}</span>
+                {order.trackingStatus && order.status !== 'delivered' && (
+                  <>
+                    {' '}
+                    · latest: <span className="font-semibold text-ink-900">{order.trackingStatus.toLowerCase()}</span>
+                  </>
+                )}
+                {order.trackingUrl && order.status !== 'delivered' && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <a href={order.trackingUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-700">
+                      Live courier tracking →
+                    </a>
+                  </>
+                )}
               </p>
             )}
 

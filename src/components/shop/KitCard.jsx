@@ -11,7 +11,7 @@ export function KitCard({ kit }) {
     <article className="card card-hover group flex h-full flex-col overflow-hidden">
       <Link to={`/shop/product/${kit.id}`} className="block">
         <div className="relative">
-          <Photo label={`${kit.name} photo`} className="aspect-[4/3]" />
+          <Photo src={kit.images?.[0]} label={`${kit.name} photo`} className="aspect-[4/3] w-full" />
           <div className="absolute left-3 top-3">
             <Badges badges={kit.badges.filter((b) => b !== 'Student Kit')} />
           </div>

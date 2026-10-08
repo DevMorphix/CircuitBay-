@@ -2,8 +2,9 @@ import { createApp, buildServices } from './app.js'
 import { loadConfig } from './config.js'
 import { createD1Db } from './db/d1.js'
 import { createR2BindingStorage } from './storage/r2-binding.js'
-import { runMaintenance } from './services/maintenance.js'
+import { runScheduled } from './services/maintenance.js'
 import { createEdgeCache } from './lib/cache.js'
+import { createErrorReporter } from './lib/monitoring.js'
 
 // Cloudflare Workers entry (recommended for production): D1 and R2 are
 // native bindings (env.DB, env.BUCKET — see wrangler.toml).
@@ -29,6 +30,14 @@ export default {
 
   // Housekeeping every 10 minutes (cron trigger in wrangler.toml)
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(runMaintenance(createD1Db(env.DB)))
+    const report = createErrorReporter(loadConfig(env))
+    ctx.waitUntil(
+      runScheduled(
+        buildServices({ config: loadConfig(env), db: createD1Db(env.DB), storage: createR2BindingStorage(env.BUCKET), cache: createEdgeCache() }),
+      ).catch(async (err) => {
+        console.error('maintenance failed', err)
+        await report(err, { tags: { job: 'maintenance' } })
+      }),
+    )
   },
 }

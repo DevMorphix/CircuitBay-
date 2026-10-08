@@ -39,8 +39,8 @@ export function buildHead({ title, description, path = '/', image, type = 'websi
       { property: 'og:description', content: desc },
       { property: 'og:url', content: canonical },
       { property: 'og:image', content: img },
-      { property: 'og:image:width', content: '1200' },
-      { property: 'og:image:height', content: '630' },
+      // Dimensions are only known for the default share image
+      ...(image ? [] : [{ property: 'og:image:width', content: '1200' }, { property: 'og:image:height', content: '630' }]),
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: fullTitle },
       { name: 'twitter:description', content: desc },
@@ -103,15 +103,16 @@ export const schema = {
     itemListElement: items.map((it, i) => ({ '@type': 'ListItem', position: i + 1, name: it.name, item: absoluteUrl(it.path) })),
   }),
 
-  // Ratings are deliberately omitted until real, verified reviews exist —
-  // marking up placeholder ratings would violate Google's guidelines.
+  // The rating comes only from approved reviews by verified buyers, and is
+  // left out until at least one exists (Google's review-snippet rules).
   product: (p) => ({
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: p.name,
     sku: p.id,
     description: p.forWhat,
-    image: [absoluteUrl(SITE.defaultImage)], // TODO_CLIENT: real product photos
+    // Real photos once uploaded in /admin; the share image until then
+    image: (p.images?.length ? p.images : [SITE.defaultImage]).map(absoluteUrl),
     brand: { '@type': 'Brand', name: p.brand ?? SITE.name },
     category: p.category,
     offers: {
@@ -119,10 +120,15 @@ export const schema = {
       url: absoluteUrl(`/shop/product/${p.id}`),
       priceCurrency: 'INR',
       price: p.price.toFixed(2),
+      // Catalogue prices exclude GST (added at checkout) — say so explicitly
+      priceSpecification: { '@type': 'UnitPriceSpecification', price: p.price.toFixed(2), priceCurrency: 'INR', valueAddedTaxIncluded: false },
       availability: `https://schema.org/${p.stock === 0 ? 'OutOfStock' : p.stock < 10 ? 'LimitedAvailability' : 'InStock'}`,
       itemCondition: 'https://schema.org/NewCondition',
       seller: { '@id': `${SITE.url}/#organization` },
     },
+    ...(p.reviews > 0 && p.rating > 0
+      ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: p.rating, reviewCount: p.reviews, bestRating: 5, worstRating: 1 } }
+      : {}),
   }),
 
   article: (a, path) => ({
@@ -134,7 +140,7 @@ export const schema = {
     dateModified: a.updated ?? a.date,
     author: { '@type': 'Organization', name: a.author ?? SITE.name, url: SITE.url }, // TODO_CLIENT: real author names
     publisher: { '@id': `${SITE.url}/#organization` },
-    image: [absoluteUrl(SITE.defaultImage)],
+    image: [absoluteUrl(a.cover ?? SITE.defaultImage)],
     mainEntityOfPage: absoluteUrl(path),
     inLanguage: 'en-IN',
   }),
