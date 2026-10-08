@@ -42,6 +42,38 @@ test('a small wheel scroll glides to the next checkpoint, not a few pixels', asy
   expect(await settled(page)).toBeLessThanOrEqual(2)
 })
 
+test('single wheel ticks glide all the way to the footer and back, never stuck between stops', async ({ page }) => {
+  // A short laptop screen, where several sections are a little taller than the screen
+  await page.setViewportSize({ width: 1366, height: 640 })
+  await page.goto('/')
+  await page.waitForLoadState('networkidle')
+  const max = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+  await page.mouse.move(640, 300)
+
+  // Pauses between ticks: right after a glide, same-way stragglers are ignored (momentum)
+  const tick = async (dy) => {
+    await page.waitForTimeout(400)
+    await page.mouse.wheel(0, dy)
+    return settled(page)
+  }
+
+  let y = await settled(page)
+  for (let i = 0; i < 40 && y < max - 2; i++) {
+    const next = await tick(40)
+    // Each tick is a real step, not a nudge of a wheel notch or two
+    expect(next - y, `tick ${i} from ${y}`).toBeGreaterThan(150)
+    y = next
+  }
+  expect(y).toBeGreaterThanOrEqual(max - 2)
+
+  for (let i = 0; i < 40 && y > 2; i++) {
+    const next = await tick(-40)
+    expect(y - next, `tick up ${i} from ${y}`).toBeGreaterThan(150)
+    y = next
+  }
+  expect(y).toBeLessThanOrEqual(2)
+})
+
 test('a trackpad flick (a burst of small wheel events with momentum) moves exactly one step', async ({ page }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')

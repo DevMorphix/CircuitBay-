@@ -9,13 +9,15 @@ import { useReducedMotion } from './useReducedMotion.js'
 //  - Mouse wheel / trackpad / keyboard: a smooth glide to the next or
 //    previous checkpoint. Trackpad momentum after a glide is swallowed so
 //    one flick moves one step.
-//  - Sections taller than the screen scroll normally inside; the glide
+//  - Sections taller than the screen get a second stop at their end. Only
+//    very long ones (over TALL screens) scroll normally inside; the glide
 //    takes over again once their end is in view (nothing is ever skipped).
 //  - Touch screens: native CSS snapping (`html.home-snap`, mandatory) on the
 //    same checkpoints — hijacking touch scrolling feels wrong on phones.
 //  - Off entirely with prefers-reduced-motion.
 
-const TALL = 1.05 // sections taller than this many screens are read with normal scrolling
+const TALL = 2 // sections taller than this many screens are read with normal scrolling
+const MIN_GAP = 0.2 // stops closer than this fraction of a screen are merged (no tiny glides)
 const THRESHOLD = 12 // px of wheel movement before a step starts
 const MOMENTUM_GAP_MS = 220 // wheel events closer than this are one gesture
 const COOLDOWN_MS = 350 // after a glide, stragglers from the same flick (same direction) are ignored
@@ -35,15 +37,23 @@ function layout() {
     const margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 0
     const top = clamp(rect.top + window.scrollY - margin)
     stops.push(top)
-    if (el.dataset.checkpoint !== 'step' && rect.height + margin > vh * TALL) {
-      // Scroll range where part of the section is still below the screen;
-      // its end is also a stop (arriving from below shows the section's end)
+    if (el.dataset.checkpoint !== 'step' && rect.height + margin > vh) {
+      // Taller than the screen: its end is also a stop, so one step shows
+      // the rest of it (and arriving from below shows the section's end).
+      // Only very long ones are read with normal scrolling in between.
       const end = clamp(top + rect.height + margin - vh)
-      tall.push({ top, end })
+      if (rect.height + margin > vh * TALL) tall.push({ top, end })
       stops.push(end)
     }
   }
-  return { stops: [...new Set(stops)].sort((a, b) => a - b), tall }
+  // Merge stops that are nearly the same place: keep the earlier one (a
+  // section's top), except the very bottom of the page, which always wins
+  const merged = []
+  for (const p of [...new Set(stops)].sort((a, b) => a - b)) {
+    if (!merged.length || p - merged.at(-1) >= vh * MIN_GAP) merged.push(p)
+    else if (p === max) merged[merged.length - 1] = p
+  }
+  return { stops: merged, tall }
 }
 
 // Where one step in `dir` (1 = down, -1 = up) should go, or null to let the
