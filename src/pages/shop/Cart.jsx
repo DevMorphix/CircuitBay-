@@ -9,10 +9,12 @@ import { OrderSummary } from '../../components/shop/OrderSummary.jsx'
 import { QtyStepper } from '../../components/shop/QtyStepper.jsx'
 import { formatPrice, products } from '../../content/shopData.js'
 import { useCart } from '../../context/CartContext.jsx'
+import { useLiveImages } from '../../lib/liveImages.js'
 
 // C5 — items left, summary right, "Complete your build" add-ons below.
 export function Cart() {
   const { items, subtotal, setQty, remove } = useCart()
+  const imagesOf = useLiveImages()
   const inCart = new Set(items.map((l) => l.id))
   const addOns = products.filter((p) => ['breadboard-830', 'jumper-wires', 'multimeter', 'soldering-kit'].includes(p.id) && !inCart.has(p.id))
 
@@ -37,7 +39,7 @@ export function Cart() {
               {items.map(({ id, qty, product }) => (
                 <li key={id} className="flex gap-4 p-5">
                   <Link to={`/shop/product/${id}`} className="shrink-0">
-                    <Photo src={product.images?.[0]} label="" className="h-20 w-20 rounded-lg sm:h-24 sm:w-24" />
+                    <Photo src={imagesOf(product)[0]} label="" className="h-20 w-20 rounded-lg sm:h-24 sm:w-24" />
                   </Link>
                   <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>

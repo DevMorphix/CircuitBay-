@@ -15,6 +15,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { trackAddToCart, trackViewItem } from '../../lib/analytics.js'
 import { api } from '../../lib/api.js'
 import { useApi } from '../../lib/useApi.js'
+import { useProductImages } from '../../lib/liveImages.js'
 import { NotFound } from '../NotFound.jsx'
 import { schema } from '../../lib/seo.js'
 
@@ -38,7 +39,7 @@ function ProductView({ product }) {
   const { add } = useCart()
   const navigate = useNavigate()
   const category = shopCategories.find((c) => c.slug === product.category)
-  const images = product.images ?? []
+  const images = useProductImages(product)
 
   useEffect(() => trackViewItem(product), [product])
 
