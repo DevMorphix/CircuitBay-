@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { formatPrice } from '../../content/shopData.js'
+import { useProductImages } from '../../lib/liveImages.js'
 import { Photo } from '../ui/Card.jsx'
 import { Icon } from '../ui/Icon.jsx'
 import { AddToCartButton, Badges } from './ProductCard.jsx'
@@ -7,11 +8,12 @@ import { AddToCartButton, Badges } from './ProductCard.jsx'
 // Featured Project Kit card (Part C2): photo, name, skill level, what you'll
 // build, what's inside, price, Add to cart.
 export function KitCard({ kit }) {
+  const [photo] = useProductImages(kit)
   return (
     <article className="card card-hover group flex h-full flex-col overflow-hidden">
       <Link to={`/shop/product/${kit.id}`} className="block">
         <div className="relative">
-          <Photo src={kit.images?.[0]} label={`${kit.name} photo`} className="aspect-[4/3] w-full" />
+          <Photo src={photo} label={`${kit.name} photo`} className="aspect-[4/3] w-full" />
           <div className="absolute left-3 top-3">
             <Badges badges={kit.badges.filter((b) => b !== 'Student Kit')} />
           </div>

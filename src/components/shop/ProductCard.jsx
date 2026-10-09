@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { formatPrice } from '../../content/shopData.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { trackAddToCart } from '../../lib/analytics.js'
+import { useProductImages } from '../../lib/liveImages.js'
 import { Photo } from '../ui/Card.jsx'
 import { Icon } from '../ui/Icon.jsx'
 
@@ -56,11 +57,12 @@ export function AddToCartButton({ product, className = '', label = 'Add to cart'
 // Product card (Part C3): image, name, short spec, price, rating, Add to cart.
 export function ProductCard({ product }) {
   const spec = Object.values(product.specs ?? {})[0]
+  const [photo] = useProductImages(product)
   return (
     <article className="card card-hover group flex h-full flex-col overflow-hidden">
       <Link to={`/shop/product/${product.id}`} className="flex flex-1 flex-col">
         <div className="relative">
-          <Photo src={product.images?.[0]} label={product.name} className="aspect-square w-full" />
+          <Photo src={photo} label={product.name} className="aspect-square w-full" />
           <div className="absolute left-3 top-3">
             <Badges badges={product.badges} />
           </div>
