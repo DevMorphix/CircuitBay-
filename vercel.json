@@ -1,0 +1,116 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://circuitbay-api.devmorphix.workers.dev/api/:path*"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "https://circuitbay-api.devmorphix.workers.dev/media/:path*"
+    },
+    {
+      "source": "/shop/cart",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/shop/checkout",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/shop/track",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/shop/order/:path*",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/account",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/login",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/register",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/forgot-password",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/reset-password",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/verify-email",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/unsubscribe",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/admin",
+      "destination": "/app-shell"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/app-shell"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/fonts/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/hero/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=2592000"
+        }
+      ]
+    }
+  ]
+}
