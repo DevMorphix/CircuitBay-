@@ -11,7 +11,6 @@ export function FeaturedBlogs() {
     <Section
       tone="grey"
       id="learn"
-      snap
       eyebrow={featuredBlogs.eyebrow}
       title={featuredBlogs.headline}
       headerAside={<ArrowLink to={featuredBlogs.cta.to}>{featuredBlogs.cta.label}</ArrowLink>}

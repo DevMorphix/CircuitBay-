@@ -17,6 +17,7 @@ database_id = "f53e900e-91c3-4731-81bb-98e55976af6b"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
+
 binding = "BUCKET"
 bucket_name = "circuitbay-media"
 

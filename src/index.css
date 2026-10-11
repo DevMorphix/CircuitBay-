@@ -113,10 +113,10 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Home page on touch screens (toggled by useCheckpointScroll): a swipe
-   settles on the next checkpoint — each story-reel chapter and each
-   section (`snap-start`). Sections taller than the screen still scroll
-   freely inside. Mouse/trackpad/keyboard use the JS glide instead. */
+/* Home page on touch screens, while within the story reel (toggled by
+   useCheckpointScroll): a swipe settles on the next reel chapter
+   (`snap-start`). Below the reel the page scrolls normally.
+   Mouse/trackpad/keyboard use the JS glide instead. */
 html.home-snap {
   scroll-snap-type: y mandatory;
 }

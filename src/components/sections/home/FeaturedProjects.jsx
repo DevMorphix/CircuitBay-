@@ -10,7 +10,6 @@ export function FeaturedProjects() {
     <Section
       tone="light"
       id="projects"
-      snap
       eyebrow={featuredProjects.eyebrow}
       title={featuredProjects.headline}
       headerAside={

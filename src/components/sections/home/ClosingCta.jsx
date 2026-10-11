@@ -5,9 +5,9 @@ import { Button } from '../../ui/Button.jsx'
 import { CircuitTrace } from '../../ui/CircuitTrace.jsx'
 
 // A7 — navy closer. Reused at the bottom of inner pages via `headline`.
-export function ClosingCta({ headline = closingCta.headline, snap = true }) {
+export function ClosingCta({ headline = closingCta.headline }) {
   return (
-    <Section tone="dark" id="start" snap={snap} className="relative overflow-hidden">
+    <Section tone="dark" id="start" className="relative overflow-hidden">
       <Reveal from="scale" className="pointer-events-none absolute inset-x-0 top-10">
         <CircuitTrace state="reconnecting" className="h-12 w-full opacity-60" />
       </Reveal>

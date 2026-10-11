@@ -6,7 +6,7 @@ import { ArrowLink, Photo } from '../../ui/Card.jsx'
 // A1 — light, two columns: copy left, real photo right.
 export function WhoWeAre() {
   return (
-    <Section tone="light" id="who-we-are" snap>
+    <Section tone="light" id="who-we-are">
       <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
         <Reveal from="left">
           <p className="eyebrow mb-4">{whoWeAre.eyebrow}</p>

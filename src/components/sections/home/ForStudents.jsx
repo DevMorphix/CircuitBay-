@@ -8,7 +8,7 @@ import { Button } from '../../ui/Button.jsx'
 // A3 — soft-blue: five feature cards (3 + 2) and a wide CTA banner.
 export function ForStudents() {
   return (
-    <Section tone="soft" id="students" snap eyebrow={students.eyebrow} title={students.headline} subtitle={students.subhead}>
+    <Section tone="soft" id="students" eyebrow={students.eyebrow} title={students.headline} subtitle={students.subhead}>
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-6">
         {students.cards.map((c, i) => (
           <Reveal key={c.title} delay={i * 0.06} className={i < 3 ? 'lg:col-span-2' : 'lg:col-span-3'}>

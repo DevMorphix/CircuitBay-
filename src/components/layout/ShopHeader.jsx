@@ -4,6 +4,7 @@ import { shopHome, shopCategories } from '../../content/shopData.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { useHydrated } from '../../lib/hydration.js'
 import { Icon } from '../ui/Icon.jsx'
+import { AccountLink } from './AccountLink.jsx'
 import { Logo } from './Logo.jsx'
 
 // Shop header (Part C1): slim announcement bar → logo + search + cart →
@@ -47,13 +48,7 @@ export function ShopHeader() {
           <Logo suffix="Shop" />
           <div className="hidden flex-1 md:block">{search}</div>
           <div className="ml-auto flex items-center gap-1 md:ml-0">
-            <Link
-              to="/account"
-              aria-label="My account"
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-600 hover:bg-brand-500/10 hover:text-brand-600"
-            >
-              <Icon name="user" size={22} />
-            </Link>
+            <AccountLink />
             <Link
               to="/shop/cart"
               aria-label={`Cart, ${count} item${count === 1 ? '' : 's'}`}

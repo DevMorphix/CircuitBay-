@@ -17,21 +17,19 @@ async function settled(page) {
   return last
 }
 
+// The story reel's stops (its top, each later chapter, its last frame)
 const checkpoints = (page) =>
   page.evaluate(() => {
     const max = document.documentElement.scrollHeight - window.innerHeight
-    const ys = [...document.querySelectorAll('[data-checkpoint]')].map((el) => {
-      const margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 0
-      return Math.round(el.getBoundingClientRect().top + window.scrollY - margin)
-    })
-    return [...new Set([...ys, max].map((y) => Math.max(0, Math.min(y, max))))].sort((a, b) => a - b)
+    const ys = [...document.querySelectorAll('[data-checkpoint="step"]')].map((el) => Math.round(el.getBoundingClientRect().top + window.scrollY))
+    return [...new Set(ys.map((y) => Math.max(0, Math.min(y, max))))].sort((a, b) => a - b)
   })
 
 test('a small wheel scroll glides to the next checkpoint, not a few pixels', async ({ page }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   const points = await checkpoints(page)
-  expect(points.length).toBeGreaterThan(8) // 5 reel chapters + sections + footer
+  expect(points).toHaveLength(6) // reel top, 4 later chapters, last frame
 
   await page.mouse.move(640, 400)
   await page.mouse.wheel(0, 40)
@@ -42,12 +40,11 @@ test('a small wheel scroll glides to the next checkpoint, not a few pixels', asy
   expect(await settled(page)).toBeLessThanOrEqual(2)
 })
 
-test('single wheel ticks glide all the way to the footer and back, never stuck between stops', async ({ page }) => {
-  // A short laptop screen, where several sections are a little taller than the screen
-  await page.setViewportSize({ width: 1366, height: 640 })
+test('single wheel ticks step through the reel, then the page scrolls normally', async ({ page }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
-  const max = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
+  const points = await checkpoints(page)
+  const lastFrame = points.at(-1)
   await page.mouse.move(640, 300)
 
   // Pauses between ticks: right after a glide, same-way stragglers are ignored (momentum)
@@ -57,21 +54,27 @@ test('single wheel ticks glide all the way to the footer and back, never stuck b
     return settled(page)
   }
 
+  // Inside the reel every tick lands on the next chapter
   let y = await settled(page)
-  for (let i = 0; i < 40 && y < max - 2; i++) {
-    const next = await tick(40)
-    // Each tick is a real step, not a nudge of a wheel notch or two
-    expect(next - y, `tick ${i} from ${y}`).toBeGreaterThan(150)
-    y = next
+  for (const p of points.slice(1)) {
+    y = await tick(40)
+    expect(Math.abs(y - p), `stop ${p}`).toBeLessThanOrEqual(2)
   }
-  expect(y).toBeGreaterThanOrEqual(max - 2)
+  expect(y).toBe(lastFrame)
 
-  for (let i = 0; i < 40 && y > 2; i++) {
-    const next = await tick(-40)
-    expect(y - next, `tick up ${i} from ${y}`).toBeGreaterThan(150)
+  // After it, a tick scrolls a tick's worth: no jumping between sections
+  for (let i = 0; i < 3; i++) {
+    const next = await tick(40)
+    expect(next - y, `tick ${i} after the reel`).toBeGreaterThan(20)
+    expect(next - y, `tick ${i} after the reel`).toBeLessThan(80)
     y = next
   }
-  expect(y).toBeLessThanOrEqual(2)
+
+  // Back up past the last frame: chapter stepping resumes
+  await page.evaluate((top) => window.scrollTo({ top, behavior: 'instant' }), lastFrame + 30)
+  await tick(-40)
+  y = await tick(-40)
+  expect(Math.abs(y - points.at(-2))).toBeLessThanOrEqual(2)
 })
 
 test('a trackpad flick (a burst of small wheel events with momentum) moves exactly one step', async ({ page }) => {
@@ -95,28 +98,24 @@ test('a trackpad flick (a burst of small wheel events with momentum) moves exact
   expect(Math.abs((await settled(page)) - points[2])).toBeLessThanOrEqual(2)
 })
 
-test('keyboard steps through every checkpoint to the footer and back, skipping nothing', async ({ page }) => {
+test('keyboard steps through the reel, then pages normally to the footer and back', async ({ page }) => {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
   const points = await checkpoints(page)
   const viewport = page.viewportSize().height
-  // The story reel's chapters are scrub distance apart (may exceed a screen)
-  const reelEnd = await page.evaluate(() => {
-    const reel = document.getElementById('top')
-    return reel.offsetTop + reel.offsetHeight - window.innerHeight
-  })
+  const max = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
 
   const visited = [await settled(page)]
-  for (let i = 0; i < 80 && visited.at(-1) < points.at(-1) - 2; i++) {
+  for (let i = 0; i < 80 && visited.at(-1) < max - 2; i++) {
     await page.keyboard.press('PageDown')
     const y = await settled(page)
     expect(y, `step ${i}`).toBeGreaterThan(visited.at(-1))
-    // After the reel, no step moves more than a screen: tall sections are read, not skipped
-    if (visited.at(-1) >= reelEnd - 2) expect(y - visited.at(-1), `step ${i} jumped too far`).toBeLessThanOrEqual(viewport * 1.06)
+    // After the reel, PageDown is the browser's own (under a screen)
+    if (visited.at(-1) >= points.at(-1) - 2) expect(y - visited.at(-1), `step ${i} jumped too far`).toBeLessThanOrEqual(viewport)
     visited.push(y)
   }
-  expect(visited.at(-1)).toBeGreaterThanOrEqual(points.at(-1) - 2) // reached the footer
-  // Every checkpoint was a stop on the way down
+  expect(visited.at(-1)).toBeGreaterThanOrEqual(max - 2) // reached the footer
+  // Every reel chapter was a stop on the way down
   for (const p of points) expect(visited.some((y) => Math.abs(y - p) <= 2), `checkpoint ${p}`).toBeTruthy()
   await expect(page.getByRole('contentinfo')).toBeInViewport()
 

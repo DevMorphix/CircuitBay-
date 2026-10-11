@@ -5,6 +5,7 @@ import { useCart } from '../../context/CartContext.jsx'
 import { useHydrated } from '../../lib/hydration.js'
 import { Button } from '../ui/Button.jsx'
 import { Icon } from '../ui/Icon.jsx'
+import { AccountLink } from './AccountLink.jsx'
 import { Logo } from './Logo.jsx'
 
 // Main-site header (Part E): Shop · Learn · Community · For Educators ·
@@ -55,13 +56,7 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link
-            to="/account"
-            aria-label="My account"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-ink-600 transition-colors hover:bg-brand-500/10 hover:text-brand-700"
-          >
-            <Icon name="user" size={22} />
-          </Link>
+          <AccountLink />
           <Link
             to="/shop/cart"
             aria-label={`Cart, ${count} item${count === 1 ? '' : 's'}`}

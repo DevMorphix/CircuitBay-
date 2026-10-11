@@ -8,7 +8,7 @@ import { CircuitTrace } from '../../ui/CircuitTrace.jsx'
 // A2 — navy: large centred quote, 3 value cards, motto strip.
 export function Beliefs() {
   return (
-    <Section tone="dark" id="beliefs" snap>
+    <Section tone="dark" id="beliefs">
       <Reveal from="scale" className="mx-auto max-w-4xl text-center">
         <p className="eyebrow mb-6">{beliefs.eyebrow}</p>
         <blockquote className="font-heading text-3xl font-semibold leading-tight tracking-tight text-white sm:text-5xl">
