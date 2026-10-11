@@ -120,6 +120,11 @@ html {
 html.home-snap {
   scroll-snap-type: y mandatory;
 }
+/* The footer is a stop too (its bottom edge = the very end of the page);
+   without it, mandatory snapping pulls the page back up off the footer */
+html.home-snap footer {
+  scroll-snap-align: end;
+}
 
 @media (prefers-reduced-motion: reduce) {
   html,
