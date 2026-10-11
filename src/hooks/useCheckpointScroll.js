@@ -1,72 +1,42 @@
 import { useEffect } from 'react'
 import { useReducedMotion } from './useReducedMotion.js'
 
-// Home page "checkpoint" scrolling: a small scroll moves to the next
-// checkpoint (each story-reel chapter, each section, the footer) instead of
-// scrolling freely. Checkpoints are elements marked `data-checkpoint`; their
-// scroll-margin-top (the fixed header) is respected.
+// Home page story-reel stepping: inside the opening reel, a small scroll
+// moves to the next chapter (each one marked `data-checkpoint="step"`,
+// ending on the reel's last frame) instead of scrubbing freely. Everything
+// after the reel scrolls normally; its sections still animate with the scroll.
 //
 //  - Mouse wheel / trackpad / keyboard: a smooth glide to the next or
-//    previous checkpoint. Trackpad momentum after a glide is swallowed so
-//    one flick moves one step.
-//  - Sections taller than the screen get a second stop at their end. Only
-//    very long ones (over TALL screens) scroll normally inside; the glide
-//    takes over again once their end is in view (nothing is ever skipped).
-//  - Touch screens: native CSS snapping (`html.home-snap`, mandatory) on the
-//    same checkpoints — hijacking touch scrolling feels wrong on phones.
+//    previous chapter. Trackpad momentum after a glide is swallowed so one
+//    flick moves one step. Past the reel's last frame: native scrolling.
+//  - Touch screens: native CSS snapping (`html.home-snap`, mandatory) on
+//    the same stops, switched on only while the page is within the reel, so
+//    it never pulls the page back up from the sections below.
 //  - Off entirely with prefers-reduced-motion.
 
-const TALL = 2 // sections taller than this many screens are read with normal scrolling
-const MIN_GAP = 0.2 // stops closer than this fraction of a screen are merged (no tiny glides)
 const THRESHOLD = 12 // px of wheel movement before a step starts
 const MOMENTUM_GAP_MS = 220 // wheel events closer than this are one gesture
 const COOLDOWN_MS = 350 // after a glide, stragglers from the same flick (same direction) are ignored
 const EDGE = 4 // px tolerance
 
-// Checkpoints (scroll positions), plus the tall sections' scroll ranges.
-// `data-checkpoint="step"` marks story-reel stops: the gaps between them
-// are scrubbing distance, always glided, never read.
-function layout() {
-  const vh = window.innerHeight
-  const max = document.documentElement.scrollHeight - vh
-  const clamp = (y) => Math.max(0, Math.min(Math.round(y), max))
-  const stops = [max] // the very bottom (footer)
-  const tall = []
-  for (const el of document.querySelectorAll('[data-checkpoint]')) {
-    const rect = el.getBoundingClientRect()
-    const margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 0
-    const top = clamp(rect.top + window.scrollY - margin)
-    stops.push(top)
-    if (el.dataset.checkpoint !== 'step' && rect.height + margin > vh) {
-      // Taller than the screen: its end is also a stop, so one step shows
-      // the rest of it (and arriving from below shows the section's end).
-      // Only very long ones are read with normal scrolling in between.
-      const end = clamp(top + rect.height + margin - vh)
-      if (rect.height + margin > vh * TALL) tall.push({ top, end })
-      stops.push(end)
-    }
-  }
-  // Merge stops that are nearly the same place: keep the earlier one (a
-  // section's top), except the very bottom of the page, which always wins
-  const merged = []
-  for (const p of [...new Set(stops)].sort((a, b) => a - b)) {
-    if (!merged.length || p - merged.at(-1) >= vh * MIN_GAP) merged.push(p)
-    else if (p === max) merged[merged.length - 1] = p
-  }
-  return { stops: merged, tall }
+// The reel's stops (scroll positions), top to bottom; the last is its last frame
+function reelStops() {
+  const max = document.documentElement.scrollHeight - window.innerHeight
+  const ys = [...document.querySelectorAll('[data-checkpoint="step"]')].map((el) =>
+    Math.max(0, Math.min(Math.round(el.getBoundingClientRect().top + window.scrollY), max)),
+  )
+  return [...new Set(ys)].sort((a, b) => a - b)
 }
 
 // Where one step in `dir` (1 = down, -1 = up) should go, or null to let the
-// browser scroll natively (reading inside a tall section, or at either end).
+// browser scroll natively (below the reel, or at its very top)
 function stepTarget(dir) {
   const y = window.scrollY
-  const { stops, tall } = layout()
-  if (dir > 0) {
-    if (tall.some((r) => y >= r.top - EDGE && y < r.end - EDGE)) return null
-    return stops.find((p) => p > y + EDGE) ?? null
-  }
-  if (tall.some((r) => y > r.top + EDGE && y <= r.end + EDGE)) return null
-  return stops.findLast((p) => p < y - EDGE) ?? null
+  const stops = reelStops()
+  const last = stops.at(-1)
+  if (last == null) return null
+  if (dir > 0) return y >= last - EDGE ? null : (stops.find((p) => p > y + EDGE) ?? null)
+  return y > last + EDGE ? null : (stops.findLast((p) => p < y - EDGE) ?? null)
 }
 
 const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2)
@@ -80,10 +50,34 @@ export function useCheckpointScroll() {
     if (reduceMotion) return undefined
     const root = document.documentElement
 
-    // Phones and tablets: CSS snapping only
+    // Phones and tablets: CSS snapping only, and only within the reel
     if (window.matchMedia('(pointer: coarse)').matches) {
-      root.classList.add('home-snap')
-      return () => root.classList.remove('home-snap')
+      let jumpUntil = 0 // an in-page link is scrolling the page: no snapping meanwhile
+      const sync = () => {
+        const last = reelStops().at(-1)
+        const inReel = last != null && window.scrollY <= last + EDGE
+        if (!inReel) jumpUntil = 0 // the link's scroll has left the reel
+        root.classList.toggle('home-snap', inReel && performance.now() > jumpUntil)
+      }
+      // Links to a spot on this page (e.g. the reel's "Start Building" →
+      // #students) would otherwise be snapped straight back to the reel
+      const onClick = (e) => {
+        if (!(e.target instanceof Element) || !e.target.closest('a[href^="#"]:not([href="#"])')) return
+        jumpUntil = performance.now() + 4000 // until it leaves the reel; this is a fallback
+        root.classList.remove('home-snap')
+      }
+      sync()
+      window.addEventListener('scroll', sync, { passive: true })
+      window.addEventListener('scrollend', sync)
+      window.addEventListener('resize', sync)
+      document.addEventListener('click', onClick, true)
+      return () => {
+        window.removeEventListener('scroll', sync)
+        window.removeEventListener('scrollend', sync)
+        window.removeEventListener('resize', sync)
+        document.removeEventListener('click', onClick, true)
+        root.classList.remove('home-snap')
+      }
     }
 
     let animating = false

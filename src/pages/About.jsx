@@ -92,7 +92,7 @@ export function About() {
         </div>
       </Section>
 
-      <ClosingCta snap={false} />
+      <ClosingCta />
     </PageShell>
   )
 }

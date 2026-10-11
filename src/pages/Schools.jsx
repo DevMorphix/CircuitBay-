@@ -93,7 +93,7 @@ export function Schools() {
         <FaqList items={schools.faq} />
       </Section>
 
-      <ClosingCta headline="Bring a maker lab to your school." snap={false} />
+      <ClosingCta headline="Bring a maker lab to your school." />
     </PageShell>
   )
 }

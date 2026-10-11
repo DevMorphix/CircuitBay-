@@ -8,7 +8,7 @@ import { Button } from '../../ui/Button.jsx'
 // A4 — navy: copy + CTA left, 2×2 offering cards right, trust + photo strip.
 export function ForEducators() {
   return (
-    <Section tone="dark" id="educators" snap>
+    <Section tone="dark" id="educators">
       <div className="grid gap-12 lg:grid-cols-[1fr_1.3fr] lg:gap-16">
         <Reveal from="left" className="lg:sticky lg:top-28 lg:self-start">
           <p className="eyebrow mb-4">{educators.eyebrow}</p>

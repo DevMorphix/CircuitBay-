@@ -14,7 +14,7 @@ import { ScrollRevealScope } from '../components/ui/Reveal.jsx'
 // Order after the reel (Part A): Who we are → Beliefs → Students →
 // Educators → Projects → Blogs → Closing CTA → Footer.
 export function Home() {
-  // A small scroll moves to the next checkpoint (reel chapters, sections)
+  // Inside the story reel a small scroll moves to the next chapter; the rest scrolls normally
   useCheckpointScroll()
 
   return (
