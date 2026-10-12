@@ -15,12 +15,14 @@ export const brand = {
   motto: ['Create.', 'Break.', 'Learn.'],
   shopUrl: 'https://shop.circuitbay.in',
   communityUrl: 'https://community.circuitbay.in',
+  blogUrl: 'https://blog.circuitbay.in',
 }
 
-// Main-site nav (Part E). `to` = internal route.
+// Main-site nav (Part E). `to` = internal route, `href` = another site.
 export const nav = [
   { label: 'Shop', to: '/shop' },
   { label: 'Learn', to: '/blog' },
+  { label: 'Blog', href: brand.blogUrl },
   { label: 'Community', to: '/projects' },
   { label: 'For Schools', to: '/schools' },
   { label: 'About', to: '/about' },
@@ -229,7 +231,8 @@ export const footer = {
     {
       title: 'Learn',
       links: [
-        { label: 'Blog', to: '/blog' },
+        { label: 'Articles', to: '/blog' },
+        { label: 'Blog', href: brand.blogUrl },
         { label: 'Final-year projects', to: '/final-year-projects' },
         { label: 'For schools', to: '/schools' },
       ],
