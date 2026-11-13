@@ -38,7 +38,8 @@ SITE_URL = "https://www.circuitbay.in"
 API_PUBLIC_URL = "https://circuitbay-api.devmorphix.workers.dev"
 CORS_ORIGINS = "https://www.circuitbay.in,https://circuitbay.in,https://circuit-bay-two.vercel.app"
 # "disabled" closes checkout until Razorpay keys are added, then set "razorpay"
-PAYMENTS_PROVIDER = "disabled"
+PAYMENTS_PROVIDER = "razorpay"
+RAZORPAY_KEY_ID = "rzp_live_TziOFYhppGJexr"
 # "resend" once RESEND_API_KEY is set as a secret (console = emails only in logs)
 EMAIL_PROVIDER = "console"
 EMAIL_FROM = "CircuitBay <hello@circuitbay.in>"
@@ -57,3 +58,4 @@ COURIER_PROVIDER = "manual"
 # SHIP_BOX_CM = "20x15x8"
 
 # `wrangler dev` reads local overrides from .dev.vars (see .dev.vars.example)
+ 
