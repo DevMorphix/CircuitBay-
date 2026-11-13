@@ -30,8 +30,9 @@ const cartItems = z
   .max(50)
 const couponCode = z.string().trim().max(40).optional().or(z.literal('').transform(() => undefined))
 
-// Loads the cart's products (merging duplicate lines) and prices it
-async function priceCart(db, items, shippingMethod, coupon) {
+// Loads the cart's products (merging duplicate lines) and prices it.
+// Not GST-registered: every line at 0% (no GST charged).
+async function priceCart(db, items, shippingMethod, coupon, gstRegistered = true) {
   const qtyById = new Map()
   for (const i of items) qtyById.set(i.productId, (qtyById.get(i.productId) ?? 0) + i.qty)
   const ids = [...qtyById.keys()]
@@ -40,7 +41,7 @@ async function priceCart(db, items, shippingMethod, coupon) {
   const found = ids.filter((id) => byId.has(id))
   // Tax per line at each product's GST rate (snapshotted on the order lines)
   const totals = priceLines(
-    found.map((id) => ({ product: byId.get(id), qty: qtyById.get(id), unitPricePaise: byId.get(id).price_paise, gstRate: byId.get(id).gst_rate })),
+    found.map((id) => ({ product: byId.get(id), qty: qtyById.get(id), unitPricePaise: byId.get(id).price_paise, gstRate: gstRegistered ? byId.get(id).gst_rate : 0 })),
     shippingMethod,
     coupon,
   )
@@ -63,14 +64,15 @@ orders.post(
   limitByIp('quote', { limit: 60, windowSec: 600 }),
   body(z.object({ items: cartItems, shippingMethod: z.enum(['standard', 'express']).default('standard'), couponCode, email: s.email.optional() })),
   async (c) => {
-    const { db } = c.var.svc
+    const { db, config } = c.var.svc
+    const gst = config.GST_REGISTERED
     const d = c.req.valid('json')
     let coupon = null
     if (d.couponCode) {
-      const { totals } = await priceCart(db, d.items, d.shippingMethod, null)
+      const { totals } = await priceCart(db, d.items, d.shippingMethod, null, gst)
       coupon = await usableCoupon(db, d.couponCode, { subtotalPaise: totals.subtotal, email: d.email ?? c.var.user?.email })
     }
-    const { totals } = await priceCart(db, d.items, d.shippingMethod, coupon)
+    const { totals } = await priceCart(db, d.items, d.shippingMethod, coupon, gst)
     return c.json({ totals: totalsOut(totals, coupon) })
   },
 )
@@ -95,11 +97,12 @@ const checkoutSchema = z.object({
 // order. The browser then opens Razorpay Checkout with `payment`. The
 // stock is held for HOLD_MINUTES; unpaid holds are released by the sweeper.
 orders.post('/checkout', limitByIp('checkout', { limit: 20, windowSec: 600 }), body(checkoutSchema), async (c) => {
-  const { db, payments } = c.var.svc
+  const { db, payments, config } = c.var.svc
+  const gst = config.GST_REGISTERED
   if (payments.name === 'disabled') throw new HttpError(503, 'checkout_closed', 'Online checkout opens soon. Please check back shortly.')
   const d = c.req.valid('json')
 
-  const { ids, qtyById, byId, totals: listTotals } = await priceCart(db, d.items, d.shippingMethod, null)
+  const { ids, qtyById, byId, totals: listTotals } = await priceCart(db, d.items, d.shippingMethod, null, gst)
   let totals = listTotals
   const problems = []
   for (const [id, qty] of qtyById) {
@@ -110,7 +113,7 @@ orders.post('/checkout', limitByIp('checkout', { limit: 20, windowSec: 600 }), b
   if (problems.length) throw conflict('Some items in your cart need attention.', problems)
 
   const coupon = d.couponCode ? await usableCoupon(db, d.couponCode, { subtotalPaise: totals.subtotal, email: d.contact.email }) : null
-  if (coupon) totals = (await priceCart(db, d.items, d.shippingMethod, coupon)).totals
+  if (coupon) totals = (await priceCart(db, d.items, d.shippingMethod, coupon, gst)).totals
   const lines = totals.lines
 
   const orderId = randomId(8, 'CB')

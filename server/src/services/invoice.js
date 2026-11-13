@@ -4,6 +4,8 @@ import { amountInWords } from '../lib/money.js'
 // Renders a GST tax invoice as a standalone, printable HTML page (the
 // browser's "Save as PDF" produces the PDF). Every figure comes from the
 // order's snapshots, so an invoice never changes after it is issued.
+// Orders taken while not GST-registered (every line at 0%) get a plain
+// invoice instead: no GSTIN, HSN or tax columns.
 // TODO_CLIENT: have the CA review the layout, and the GST treatment of
 // shipping, before launch.
 
@@ -15,7 +17,9 @@ const day = (ms) => new Date(ms).toLocaleDateString('en-IN', { day: '2-digit', m
 // `creditNote` (a credit_notes row) renders the credit note that reverses
 // this order's invoice instead of the invoice itself.
 export function renderInvoice({ order: o, items, config, creditNote: cn = null }) {
-  const docTitle = cn ? 'Credit Note' : 'Tax Invoice'
+  // GST was charged on this order (it was taken while GST-registered)
+  const gst = items.some((i) => (i.gst_rate ?? 18) > 0)
+  const docTitle = cn ? 'Credit Note' : gst ? 'Tax Invoice' : 'Invoice'
   const docNo = cn ? cn.number : o.invoice_no
   const supplyCode = o.place_of_supply ?? stateCode(o.ship_state)
   const sellerCode = config.BUSINESS_STATE_CODE ?? config.BUSINESS_GSTIN?.slice(0, 2) ?? null
@@ -32,7 +36,7 @@ export function renderInvoice({ order: o, items, config, creditNote: cn = null }
   })
   const sum = (k) => rows.reduce((n, r) => n + r[k], 0)
   const hasDisc = rows.some((r) => r.disc > 0)
-  const span = 6 + (hasDisc ? 1 : 0) + (intra ? 2 : 1) // columns before "Amount"
+  const span = gst ? 6 + (hasDisc ? 1 : 0) + (intra ? 2 : 1) : 4 + (hasDisc ? 1 : 0) // columns before "Amount"
 
   const taxCols = intra
     ? '<th class="num">CGST</th><th class="num">SGST</th>'
@@ -78,7 +82,7 @@ export function renderInvoice({ order: o, items, config, creditNote: cn = null }
     <div>
       <h1>${docTitle}</h1>
       <p><strong>${esc(config.BUSINESS_LEGAL_NAME)}</strong><br>${esc(config.BUSINESS_ADDRESS)}<br>
-      GSTIN: <strong>${esc(config.BUSINESS_GSTIN ?? 'Not configured')}</strong>${sellerCode ? `<br>State: ${esc(stateName(sellerCode))} (${esc(sellerCode)})` : ''}</p>
+      ${gst ? `GSTIN: <strong>${esc(config.BUSINESS_GSTIN ?? 'Not configured')}</strong>${sellerCode ? `<br>State: ${esc(stateName(sellerCode))} (${esc(sellerCode)})` : ''}` : 'Not registered under GST'}</p>
     </div>
     <div class="meta">
       ${
@@ -101,25 +105,25 @@ export function renderInvoice({ order: o, items, config, creditNote: cn = null }
   </section>
 
   <table>
-    <thead><tr><th>#</th><th>Item</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate (₹)</th>${hasDisc ? '<th class="num">Discount (₹)</th>' : ''}<th class="num">Taxable (₹)</th>${taxCols}<th class="num">Amount (₹)</th></tr></thead>
+    <thead><tr><th>#</th><th>Item</th>${gst ? '<th>HSN</th>' : ''}<th class="num">Qty</th><th class="num">Rate (₹)</th>${hasDisc ? '<th class="num">Discount (₹)</th>' : ''}${gst ? `<th class="num">Taxable (₹)</th>${taxCols}` : ''}<th class="num">Amount (₹)</th></tr></thead>
     <tbody>
       ${rows
         .map(
-          (r) => `<tr><td>${r.n}</td><td>${esc(r.name)}</td><td>${esc(r.hsn ?? '—')}</td><td class="num">${r.qty}</td><td class="num">${inr(r.unit)}</td>${hasDisc ? `<td class="num">${inr(r.disc)}</td>` : ''}<td class="num">${inr(r.taxable)}</td>${taxCells(r)}<td class="num">${inr(r.taxable + r.tax)}</td></tr>`,
+          (r) => `<tr><td>${r.n}</td><td>${esc(r.name)}</td>${gst ? `<td>${esc(r.hsn ?? '—')}</td>` : ''}<td class="num">${r.qty}</td><td class="num">${inr(r.unit)}</td>${hasDisc ? `<td class="num">${inr(r.disc)}</td>` : ''}${gst ? `<td class="num">${inr(r.taxable)}</td>${taxCells(r)}` : ''}<td class="num">${inr(r.taxable + r.tax)}</td></tr>`,
         )
         .join('\n      ')}
     </tbody>
     <tfoot>
-      <tr><td colspan="5">Total</td>${hasDisc ? `<td class="num">${inr(sum('disc'))}</td>` : ''}<td class="num">${inr(sum('taxable'))}</td>${intra ? `<td class="num">${inr(sum('cgst'))}</td><td class="num">${inr(sum('sgst'))}</td>` : `<td class="num">${inr(sum('igst'))}</td>`}<td class="num">${inr(sum('taxable') + sum('tax'))}</td></tr>
+      <tr><td colspan="${gst ? 5 : 4}">Total</td>${hasDisc ? `<td class="num">${inr(sum('disc'))}</td>` : ''}${gst ? `<td class="num">${inr(sum('taxable'))}</td>${intra ? `<td class="num">${inr(sum('cgst'))}</td><td class="num">${inr(sum('sgst'))}</td>` : `<td class="num">${inr(sum('igst'))}</td>`}` : ''}<td class="num">${inr(sum('taxable') + sum('tax'))}</td></tr>
       ${o.shipping_paise ? `<tr><td colspan="${span}">Shipping (${esc(o.shipping_method)})</td><td class="num">${inr(o.shipping_paise)}</td></tr>` : ''}
       <tr class="grand"><td colspan="${span}">${cn ? 'Credit note total' : 'Invoice total'}</td><td class="num">₹${inr(cn ? cn.total_paise : o.total_paise)}</td></tr>
     </tfoot>
   </table>
 
   <p class="words"><strong>Amount in words:</strong> ${esc(amountInWords(cn ? cn.total_paise : o.total_paise))}</p>
-  ${hasDisc && o.coupon_code ? `<p>Discount: coupon <strong>${esc(o.coupon_code)}</strong>, allowed on the invoice before tax.</p>` : ''}
-  ${cn ? `<p><strong>Reason:</strong> ${esc(cn.reason)}. This credit note reverses the full value of invoice ${esc(cn.invoice_no)}, including the tax shown.</p>` : ''}
-  <p class="note">Tax is not payable on reverse charge. This is a computer-generated ${cn ? 'credit note' : 'invoice'} and does not require a signature.</p>
+  ${hasDisc && o.coupon_code ? `<p>Discount: coupon <strong>${esc(o.coupon_code)}</strong>${gst ? ', allowed on the invoice before tax' : ''}.</p>` : ''}
+  ${cn ? `<p><strong>Reason:</strong> ${esc(cn.reason)}. This credit note reverses the full value of invoice ${esc(cn.invoice_no)}${gst ? ', including the tax shown' : ''}.</p>` : ''}
+  <p class="note">${gst ? 'Tax is not payable on reverse charge.' : 'The supplier is not registered under GST; no GST has been charged.'} This is a computer-generated ${cn ? 'credit note' : 'invoice'} and does not require a signature.</p>
 </main>
 </body>
 </html>`
@@ -131,10 +135,12 @@ export async function invoiceResponse(c, order) {
   if (!order.invoice_no) {
     return c.json({ error: { code: 'not_invoiced', message: 'The invoice is issued once payment is confirmed.' } }, 404)
   }
-  if (config.APP_ENV === 'production' && !config.BUSINESS_GSTIN) {
+  const items = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid', [order.id])
+  // Production needs the real seller details: the address, and a GSTIN for a tax invoice
+  const gst = items.some((i) => (i.gst_rate ?? 18) > 0)
+  if (config.APP_ENV === 'production' && (/TODO_CLIENT/.test(config.BUSINESS_ADDRESS) || (gst && !config.BUSINESS_GSTIN))) {
     return c.json({ error: { code: 'not_configured', message: "Invoices aren't available yet. Please contact us for a copy." } }, 503)
   }
-  const items = await db.all('SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid', [order.id])
   c.header('Cache-Control', 'private, no-store')
   return c.html(renderInvoice({ order, items, config }))
 }

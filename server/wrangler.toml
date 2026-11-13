@@ -39,6 +39,10 @@ API_PUBLIC_URL = "https://circuitbay-api.devmorphix.workers.dev"
 CORS_ORIGINS = "https://www.circuitbay.in,https://circuitbay.in,https://circuit-bay-two.vercel.app"
 # "disabled" closes checkout until Razorpay keys are added, then set "razorpay"
 PAYMENTS_PROVIDER = "razorpay"
+# Not GST-registered yet: no GST is charged and invoices are plain invoices.
+# Set "true" (with BUSINESS_GSTIN etc.) once registered, and GST_REGISTERED in
+# src/content/shopData.js to match.
+GST_REGISTERED = "false"
 RAZORPAY_KEY_ID = "rzp_live_TziOFYhppGJexr"
 # "resend" once RESEND_API_KEY is set as a secret (console = emails only in logs)
 EMAIL_PROVIDER = "console"

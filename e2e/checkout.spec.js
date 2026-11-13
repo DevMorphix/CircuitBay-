@@ -51,5 +51,5 @@ test('guest: product → cart → coupon → checkout → confirmation → track
   await page.getByRole('button', { name: 'Track' }).click()
   await expect(page.getByText(`#${orderId}`)).toBeVisible()
   await expect(page.getByRole('list', { name: 'Order status' })).toBeVisible()
-  await expect(page.getByRole('button', { name: /GST invoice/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Invoice CB\// })).toBeVisible()
 })

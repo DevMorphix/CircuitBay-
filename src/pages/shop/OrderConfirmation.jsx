@@ -59,7 +59,7 @@ export function OrderConfirmation() {
         )}
         <div className="mt-8 flex flex-wrap justify-center gap-4">
           <Button to={`/shop/track?order=${id}`}>Track your order</Button>
-          {order?.invoiceNo && <InvoiceButton path="/orders/invoice" body={{ orderId: id, contact: order.contact.email }} label="Download GST invoice" className="py-3!" />}
+          {order?.invoiceNo && <InvoiceButton path="/orders/invoice" body={{ orderId: id, contact: order.contact.email }} label="Download invoice" className="py-3!" />}
           <Button to="/shop" variant="secondary">
             Continue shopping
           </Button>

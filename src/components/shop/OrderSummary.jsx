@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { formatPrice } from '../../content/shopData.js'
+import { GST_REGISTERED, formatPrice } from '../../content/shopData.js'
 import { summarise, useCart } from '../../context/CartContext.jsx'
 import { api, fieldErrors } from '../../lib/api.js'
 
@@ -90,7 +90,7 @@ export function OrderSummary({ items, subtotal, shippingMethod = 'standard', ser
         <Row label="Subtotal" value={formatPrice(totals.subtotal ?? subtotal)} />
         {totals.discount > 0 && <Row label={`Coupon ${applied?.code ?? ''}`} value={`−${formatPrice(totals.discount)}`} />}
         <Row label="Shipping" value={totals.shipping === 0 ? 'Free' : formatPrice(totals.shipping)} />
-        <Row label="GST" value={formatPrice(totals.tax)} />
+        {(GST_REGISTERED || totals.tax > 0) && <Row label="GST" value={formatPrice(totals.tax)} />}
       </dl>
 
       {coupon && !serverTotals && showCoupon && (

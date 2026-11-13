@@ -21,6 +21,7 @@ Object.assign(process.env, {
   ADMIN_EMAILS: 'admin@e2e.test',
   PAYMENTS_PROVIDER: 'fake',
   COURIER_PROVIDER: 'fake',
+  GST_REGISTERED: 'false', // matches GST_REGISTERED in src/content/shopData.js
   EMAIL_PROVIDER: 'console',
   SMS_PROVIDER: 'console',
 })

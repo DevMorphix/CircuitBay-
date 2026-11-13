@@ -38,6 +38,9 @@ const schema = z
       .optional(),
     BUSINESS_ADDRESS: z.string().default('Registered address — TODO_CLIENT'),
     BUSINESS_STATE_CODE: z.string().regex(/^\d{2}$/).optional(), // e.g. 32 = Kerala
+    // "false" until the business is GST-registered: no GST is charged and
+    // invoices are plain invoices ("not registered under GST"), not tax invoices
+    GST_REGISTERED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 
     PAYMENTS_PROVIDER: z.enum(['razorpay', 'fake', 'disabled']).default('fake'), // disabled = checkout closed,
     RAZORPAY_KEY_ID: z.string().optional(),

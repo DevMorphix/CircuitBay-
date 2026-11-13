@@ -684,6 +684,30 @@ describe('GST invoices', () => {
     expect((await db.first('SELECT last FROM invoice_counters')).last).toBe(2)
   })
 
+  it('not GST-registered: charges no GST and issues a plain invoice', async () => {
+    const { app, db } = setup({ GST_REGISTERED: 'false', BUSINESS_LEGAL_NAME: 'CircuitBay Test' })
+    const api = client(app)
+    const items = [{ productId: 'esp32-iot-starter', qty: 1 }]
+    const quote = await api.post('/api/checkout/quote', { items })
+    expect(quote.body.totals.tax).toBe(0)
+    expect(quote.body.totals.total).toBe(quote.body.totals.subtotal + quote.body.totals.shipping)
+
+    const co = await api.post('/api/checkout', checkoutBody(items))
+    expect(co.status).toBe(201)
+    expect(co.body.totals.tax).toBe(0)
+    expect(await db.first('SELECT gst_rate, tax_paise FROM order_items WHERE order_id = ?', [co.body.orderId])).toEqual({ gst_rate: 0, tax_paise: 0 })
+    await pay(api, co)
+
+    const doc = await html(await api.post('/api/orders/invoice', { orderId: co.body.orderId, contact: 'buyer@example.com' }))
+    expect(doc).toContain('<h1>Invoice</h1>')
+    expect(doc).not.toContain('Tax Invoice')
+    expect(doc).toContain('Not registered under GST')
+    expect(doc).not.toContain('GSTIN')
+    expect(doc).not.toContain('CGST')
+    expect(doc).not.toContain('>IGST<')
+    expect(doc).toContain('no GST has been charged')
+  })
+
   it('charges GST per product rate and prints matching totals', async () => {
     const { app, db } = setup(SELLER)
     await db.run(`UPDATE products SET gst_rate = 5, hsn_code = '85437099' WHERE id = 'hc-sr04'`)
