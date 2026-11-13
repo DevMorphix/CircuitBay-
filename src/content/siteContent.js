@@ -15,12 +15,14 @@ export const brand = {
   motto: ['Create.', 'Break.', 'Learn.'],
   shopUrl: 'https://shop.circuitbay.in',
   communityUrl: 'https://community.circuitbay.in',
+  blogUrl: 'https://blog.circuitbay.in',
 }
 
-// Main-site nav (Part E). `to` = internal route.
+// Main-site nav (Part E). `to` = internal route, `href` = another site.
 export const nav = [
   { label: 'Shop', to: '/shop' },
   { label: 'Learn', to: '/blog' },
+  { label: 'Blog', href: brand.blogUrl },
   { label: 'Community', to: '/projects' },
   { label: 'For Schools', to: '/schools' },
   { label: 'About', to: '/about' },
@@ -202,11 +204,10 @@ export const about = {
 
 export const contact = {
   roles: ['Student', 'Educator', 'Institution', 'Hobbyist'],
-  // TODO_CLIENT: real contact channels
   channels: [
     { icon: 'mail', label: 'Email', value: 'hello@circuitbay.in', href: 'mailto:hello@circuitbay.in' },
-    { icon: 'phone', label: 'Phone / WhatsApp', value: '+91 00000 00000', href: 'tel:+910000000000' },
-    { icon: 'pin', label: 'Visit', value: 'Address — TODO_CLIENT', href: null },
+    { icon: 'phone', label: 'Phone / WhatsApp', value: '+91 82814 61307', href: 'tel:+918281461307' },
+    { icon: 'pin', label: 'Visit', value: 'GJ26+MV3, Palamattam, Karukachal, Keralam 686536', href: 'https://www.google.com/maps/search/?api=1&query=GJ26%2BMV3%20Karukachal%2C%20Kerala' },
   ],
 }
 
@@ -229,7 +230,8 @@ export const footer = {
     {
       title: 'Learn',
       links: [
-        { label: 'Blog', to: '/blog' },
+        { label: 'Articles', to: '/blog' },
+        { label: 'Blog', href: brand.blogUrl },
         { label: 'Final-year projects', to: '/final-year-projects' },
         { label: 'For schools', to: '/schools' },
       ],

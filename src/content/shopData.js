@@ -114,6 +114,10 @@ export const products = productsData
 
 export const formatPrice = (n) => `₹${n.toLocaleString('en-IN')}`
 
+// Matches GST_REGISTERED in server/wrangler.toml. false until the business
+// is GST-registered: no GST is added to prices, carts or invoices.
+export const GST_REGISTERED = false
+
 export const getProduct = (id) => products.find((p) => p.id === id)
 
 export const kits = products.filter((p) => p.kit)

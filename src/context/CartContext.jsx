@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { getProduct } from '../content/shopData.js'
+import { GST_REGISTERED, getProduct } from '../content/shopData.js'
 
 // Front-end-only cart (no backend yet). Persisted to localStorage so it
 // survives reloads; every storage call is guarded because it can throw in
@@ -95,7 +95,7 @@ export function summarise(items, shippingMethod = 'standard') {
   for (const l of items) {
     const taxable = Math.round(l.product.price * 100) * l.qty
     sub += taxable
-    tax += Math.round((taxable * (l.product.gstRate ?? 18)) / 100)
+    tax += GST_REGISTERED ? Math.round((taxable * (l.product.gstRate ?? 18)) / 100) : 0
   }
   let ship = shippingMethod === 'express' ? 149_00 : 79_00
   if ((shippingMethod === 'standard' && sub >= 999_00) || sub === 0) ship = 0

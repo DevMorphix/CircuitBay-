@@ -1,6 +1,8 @@
 // SEO building blocks shared by the <Seo> component (browser) and the
 // build-time prerenderer (scripts/prerender.js).
 
+import { GST_REGISTERED } from '../content/shopData.js'
+
 export const SITE = {
   url: 'https://circuitbay.in', // canonical host — redirect www → apex at the CDN
   name: 'CircuitBay',
@@ -120,8 +122,8 @@ export const schema = {
       url: absoluteUrl(`/shop/product/${p.id}`),
       priceCurrency: 'INR',
       price: p.price.toFixed(2),
-      // Catalogue prices exclude GST (added at checkout) — say so explicitly
-      priceSpecification: { '@type': 'UnitPriceSpecification', price: p.price.toFixed(2), priceCurrency: 'INR', valueAddedTaxIncluded: false },
+      // While GST-registered, catalogue prices exclude GST (added at checkout) — say so explicitly
+      ...(GST_REGISTERED ? { priceSpecification: { '@type': 'UnitPriceSpecification', price: p.price.toFixed(2), priceCurrency: 'INR', valueAddedTaxIncluded: false } } : {}),
       availability: `https://schema.org/${p.stock === 0 ? 'OutOfStock' : p.stock < 10 ? 'LimitedAvailability' : 'InStock'}`,
       itemCondition: 'https://schema.org/NewCondition',
       seller: { '@id': `${SITE.url}/#organization` },

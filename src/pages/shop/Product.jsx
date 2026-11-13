@@ -8,7 +8,7 @@ import { ProductCard, Badges, Rating } from '../../components/shop/ProductCard.j
 import { ProjectCard } from '../../components/content/ProjectCard.jsx'
 import { ProductReviews } from '../../components/shop/Reviews.jsx'
 import { QtyStepper } from '../../components/shop/QtyStepper.jsx'
-import { formatPrice, getProduct, products, shopCategories } from '../../content/shopData.js'
+import { GST_REGISTERED, formatPrice, getProduct, products, shopCategories } from '../../content/shopData.js'
 import { projects } from '../../content/siteContent.js'
 import { useCart } from '../../context/CartContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
@@ -133,7 +133,7 @@ function ProductView({ product }) {
               </div>
               <p className="mt-6 font-heading text-3xl font-semibold text-ink-900">{formatPrice(product.price)}</p>
               {/* Matches checkout: GST is added on top (see server/src/lib/money.js) */}
-              <p className="mt-1 text-xs text-ink-400">+ {product.gstRate ?? 18}% GST, added at checkout</p>
+              {GST_REGISTERED && <p className="mt-1 text-xs text-ink-400">+ {product.gstRate ?? 18}% GST, added at checkout</p>}
               <p className={`mt-3 text-sm font-semibold ${stock < 10 ? 'text-navy-800' : 'text-brand-700'}`}>
                 {stock === 0 ? 'Out of stock' : stock < 10 ? `Only ${stock} left` : 'In stock — ships in 24 hours'}
               </p>

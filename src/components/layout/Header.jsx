@@ -43,7 +43,11 @@ export function Header() {
 
         <nav className="hidden items-center gap-7 md:flex" aria-label="Primary">
           {nav.map((item) =>
-            item.to.includes('#') ? (
+            item.href ? (
+              <a key={item.href} href={item.href} className={linkClass({ isActive: false })}>
+                {item.label}
+              </a>
+            ) : item.to.includes('#') ? (
               <Link key={item.to} to={item.to} className={linkClass({ isActive: false })}>
                 {item.label}
               </Link>
@@ -93,16 +97,22 @@ export function Header() {
       {open && (
         <nav id="mobile-nav" aria-label="Mobile" className="border-t border-black/5 bg-white px-4 pb-6 pt-2 md:hidden">
           <ul className="flex flex-col">
-            {nav.map((item) => (
-              <li key={item.to}>
-                <Link
-                  to={item.to}
-                  className="block border-b border-black/5 py-3.5 font-heading text-lg font-semibold text-ink-900"
-                >
-                  {item.label}
-                </Link>
-              </li>
-            ))}
+            {nav.map((item) => {
+              const className = 'block border-b border-black/5 py-3.5 font-heading text-lg font-semibold text-ink-900'
+              return (
+                <li key={item.href ?? item.to}>
+                  {item.href ? (
+                    <a href={item.href} className={className}>
+                      {item.label}
+                    </a>
+                  ) : (
+                    <Link to={item.to} className={className}>
+                      {item.label}
+                    </Link>
+                  )}
+                </li>
+              )
+            })}
           </ul>
           <Button to="/shop" variant="primary" className="mt-5 w-full">
             Start Building

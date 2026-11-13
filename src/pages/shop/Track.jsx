@@ -78,7 +78,7 @@ export function Track() {
             <p className="font-heading text-2xl font-semibold text-ink-900">#{order.id}</p>
             {(order.invoiceNo || order.creditNoteNo) && (
               <div className="mt-3 flex flex-wrap gap-2">
-                {order.invoiceNo && <InvoiceButton path="/orders/invoice" body={{ orderId: order.id, contact }} label={`GST invoice ${order.invoiceNo}`} />}
+                {order.invoiceNo && <InvoiceButton path="/orders/invoice" body={{ orderId: order.id, contact }} label={`Invoice ${order.invoiceNo}`} />}
                 {order.creditNoteNo && <InvoiceButton path="/orders/credit-note" body={{ orderId: order.id, contact }} label={`Credit note ${order.creditNoteNo}`} />}
               </div>
             )}
