@@ -204,11 +204,10 @@ export const about = {
 
 export const contact = {
   roles: ['Student', 'Educator', 'Institution', 'Hobbyist'],
-  // TODO_CLIENT: real contact channels
   channels: [
     { icon: 'mail', label: 'Email', value: 'hello@circuitbay.in', href: 'mailto:hello@circuitbay.in' },
-    { icon: 'phone', label: 'Phone / WhatsApp', value: '+91 00000 00000', href: 'tel:+910000000000' },
-    { icon: 'pin', label: 'Visit', value: 'Address — TODO_CLIENT', href: null },
+    { icon: 'phone', label: 'Phone / WhatsApp', value: '+91 82814 61307', href: 'tel:+918281461307' },
+    { icon: 'pin', label: 'Visit', value: 'GJ26+MV3, Palamattam, Karukachal, Keralam 686536', href: 'https://www.google.com/maps/search/?api=1&query=GJ26%2BMV3%20Karukachal%2C%20Kerala' },
   ],
 }
 

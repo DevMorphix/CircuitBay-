@@ -43,6 +43,9 @@ PAYMENTS_PROVIDER = "razorpay"
 # Set "true" (with BUSINESS_GSTIN etc.) once registered, and GST_REGISTERED in
 # src/content/shopData.js to match.
 GST_REGISTERED = "false"
+# Seller details printed on invoices
+BUSINESS_ADDRESS = "GJ26+MV3, Palamattam, Karukachal, Keralam 686536 · Phone: +91 82814 61307"
+BUSINESS_STATE_CODE = "32"
 RAZORPAY_KEY_ID = "rzp_live_TziOFYhppGJexr"
 # "resend" once RESEND_API_KEY is set as a secret (console = emails only in logs)
 EMAIL_PROVIDER = "console"
